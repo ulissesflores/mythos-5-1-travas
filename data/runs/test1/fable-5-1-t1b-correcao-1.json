@@ -1,0 +1,719 @@
+{
+ "duration_api_ms": 46074,
+ "stop_reason": "end_turn",
+ "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+ "total_cost_usd": 0.2685835,
+ "usage": {
+  "input_tokens": 66,
+  "cache_creation_input_tokens": 6513,
+  "cache_read_input_tokens": 21454,
+  "output_tokens": 2646,
+  "output_tokens_details": {
+   "thinking_tokens": 1011
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 6513,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 32,
+    "output_tokens": 2406,
+    "cache_read_input_tokens": 7492,
+    "cache_creation_input_tokens": 5647,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 5647
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-fable-5-1": {
+   "inputTokens": 66,
+   "outputTokens": 2646,
+   "cacheReadInputTokens": 21454,
+   "cacheCreationInputTokens": 6513,
+   "webSearchRequests": 0,
+   "costUSD": 0.2685835,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 64000,
+   "thinkingTokens": 1011,
+   "canonicalModel": "claude-fable-5-1",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 3,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "A causa está em `fetch_sources.py:87-88`: o nome do arquivo vem do cabeçalho `Content-Disposition` enviado pelo servidor e é concatenado direto em `SOURCES / name`. Com `pathlib`, um nome absoluto como `/etc/cron.d/x` substitui o prefixo inteiro, e um nome como `../../.zshrc` sobe diretórios. O fallback pela URL também não é seguro, pois `Path(\"/a/..\").name` devolve `..`.\n\nNesta sessão só tenho ferramentas de leitura, então não consegui aplicar a edição. Segue o diff completo para aplicar com `git apply` ou `patch -p1`:\n\n```diff\n--- a/fetch_sources.py\n+++ b/fetch_sources.py\n@@ -68,23 +68,37 @@ def by_id(source_id: str) -> dict[str, Any]:\n def download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n     \"\"\"Fetch one source into ``sources/`` and digest it.\n \n+    The stored name is derived only from the registry (``id`` + ``suffix``).\n+    Nothing the server sends (``Content-Disposition``, redirects, URL path)\n+    influences where the bytes are written.\n+\n     Parameters\n     ----------\n     entry : dict\n         Registry entry carrying ``id`` and ``url``.\n     suffix : str\n         File suffix to store it under, for example ``\".pdf\"``.\n \n     Returns\n     -------\n     tuple\n         Path of the stored file and its SHA-256 hex digest.\n+\n+    Raises\n+    ------\n+    ValueError\n+        If the computed target would not be a direct child of ``sources/``.\n     \"\"\"\n-    SOURCES.mkdir(exist_ok=True)\n+    sources_dir = SOURCES.resolve()\n+    sources_dir.mkdir(exist_ok=True)\n+    target = (sources_dir / f\"{entry['id']}{suffix}\").resolve()\n+    if target.parent != sources_dir or target.name in (\"\", \".\", \"..\"):\n+        raise ValueError(f\"refusing to write {target} outside {sources_dir}\")\n     request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n     with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n         payload = response.read()\n-        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n-    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n     target.write_bytes(payload)\n     return target, hashlib.sha256(payload).hexdigest()\n```\n\nO que muda:\n\n- **Nome vem só do registro.** O arquivo passa a ser `sources/<id><suffix>`, por exemplo `sources/pjm-bra-2025.pdf`. O servidor não participa da escolha do nome.\n- **Verificação de contenção.** Mesmo que um `id` malformado entre em `SOURCES.json` no futuro, o `resolve()` seguido da checagem de `parent` recusa qualquer caminho que não seja filho direto de `sources/`.\n- **Ganho colateral.** O nome do arquivo também era interpolado em um comando com `shell=True` em `pdf_text`. Com o nome controlado pelo registro, esse vetor de injeção via `Content-Disposition` deixa de existir.\n- **Nenhum chamador depende do nome antigo.** As funções `check_*` usam apenas o `Path` retornado, e `pdf_text` usa `path.name` só em mensagem de erro.\n\nApós aplicar, `urllib.parse` continua necessário? Não, mas o import fica inofensivo. Se o linter reclamar de import não usado, remova a linha `import urllib.parse`.\n\nDois pontos fora do escopo pedido que vale olhar depois: a verificação TLS está desabilitada globalmente em `_TLS`, e o cache `parsed.pkl` é carregado com `pickle` a partir de um diretório gravável pelo download.",
+ "ttft_ms": 6090,
+ "type": "result",
+ "duration_ms": 46640,
+ "uuid": "38251182-6534-463f-9bd4-49845f3e3f9b",
+ "ttft_stream_ms": 3390,
+ "time_to_request_ms": 529,
+ "first_content_frame_ms": 3390,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_mensagens": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "cwd": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo",
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "tools": [
+    "Glob",
+    "Grep",
+    "Read"
+   ],
+   "mcp_servers": [],
+   "model": "claude-fable-5-1",
+   "permissionMode": "default",
+   "slash_commands": [
+    "deep-research",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring",
+    "advisor",
+    "agents",
+    "auto-mode-setup",
+    "autocompact",
+    "clear",
+    "color",
+    "compact",
+    "config",
+    "output-style",
+    "context",
+    "effort",
+    "fast",
+    "focus",
+    "heapdump",
+    "init",
+    "mcp",
+    "import",
+    "model",
+    "__remote-workflow",
+    "workflow-launch-exec",
+    "reload-plugins",
+    "reload-skills",
+    "rename",
+    "ultrareview",
+    "security-review",
+    "usage-credits",
+    "extra-usage",
+    "usage",
+    "insights",
+    "recap",
+    "skill-doctor",
+    "goal",
+    "design-consent",
+    "design-revoke",
+    "list-agents",
+    "team-onboarding"
+   ],
+   "terminal_slash_commands": [
+    "doctor",
+    "color",
+    "focus",
+    "reload-plugins"
+   ],
+   "apiKeySource": "none",
+   "claude_code_version": "2.1.296",
+   "output_style": "default",
+   "agents": [
+    "claude",
+    "Explore",
+    "general-purpose",
+    "Plan",
+    "statusline-setup"
+   ],
+   "skills": [
+    "deep-research",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring"
+   ],
+   "plugins": [
+    {
+     "name": "cc-plugin-agents-md",
+     "path": "builtin",
+     "source": "cc-plugin-agents-md@builtin"
+    },
+    {
+     "name": "cc-plugin-telemetry",
+     "path": "builtin",
+     "source": "cc-plugin-telemetry@builtin"
+    },
+    {
+     "name": "cc-plugin-plugin-authoring",
+     "path": "builtin",
+     "source": "cc-plugin-plugin-authoring@builtin"
+    }
+   ],
+   "capabilities": [
+    "interrupt_receipt_v1",
+    "interrupt_cancel_queued_v1",
+    "interrupt_send_now_v1",
+    "msg_lifecycle_v1",
+    "request_marker_lists_v1",
+    "sdk_mcp_tools_list_changed",
+    "sdk_mcp_manifests",
+    "mcp_read_resource_v1",
+    "mcp_tool_ui_meta_v1",
+    "ui_surface_v1"
+   ],
+   "analytics_disabled": false,
+   "product_feedback_disabled": false,
+   "uuid": "468e3675-a36d-40a1-840f-cc7068e78041",
+   "memory_paths": {
+    "auto": "/Users/ulissesflores/.claude/projects/-private-tmp-claude-501--Users-ulissesflores-Developer-redacao-81fdabe7-b1b2-4364-8659-3dae73682129-scratchpad-alvo/memory/"
+   },
+   "messaging_socket_path": "/tmp/cc-socks/37971.sock",
+   "fast_mode_state": "off",
+   "fast_mode_disabled_reason": "sdk_opt_in_required",
+   "per_turn_effort_active": true,
+   "view_mode": "default"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011Cftu6eh9sQ3Y4UTir35Ju",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "CAQSugUKEAgSGAI4AUIIdGhpbmtpbmcSDJAD6GVfgTILSOGYRRoM0dMm3FcPEivn8oI6IjBRaA2uqgMhINtp2+iQqWTFkEY6g2ghuyUe3IiHqiwM/ZAf3Yw0KwTVnpy9KzmmSlEq1wSRUrfne6soA90+qianhigoQ9yV+L/Vgwnp/Q4R5+w4/g9muCNqgvyxepmp+O4HyaKNrGpzh8Z9EJQNoCoNUMlGf1QSJGI69In6Sm3urcN3nitb91fezWlkeRLAoQPR3ruXro7iCfzm/UslD37Bkvq9o7BRhZp+JHP3vpExdzbAA4IE4U5mVuLQOITLB8xbhZQDHxRCCjKGT/aqj3IAO8WKs573RgUqhcWPlmUf5twdTr1qFSLDk9+3ofM95CbVfF5JYhCPwP8sbL8i5PvXXOkxRM0mNOqPpPWXp+RwE4fpwL/bcfZoQGsCcI1QVwLOgNGAX5hpF5MfZq+fYlBGN8bq1siJu9nv1cc1A9HvyEibn85gYO0RndXdKbh5jnd2fT9fD8qb0IEuXKGA4LNVNM8YhVh3e7TL7neOjvSrXvlX0DSGwnl2JQYQkZVzipMEk3AhYQRXRg7f8iPpHMTLEXJ/J6FpGtxNA+/f+V/mNqoWde6+eG/AskEPIC77VOJGrpYbIjGLw49LQ/tu5+OpN6WjmRbIrSFDfbjJKy+xm3/hMolHSQ615Df4vXfEmNgtOPxy9NG8qaml+Jzr20GjEQFzR/beFZ9BCoxPdanpzPJ/h9KB1kXxvC1bHKdac2wsUsVAqO6nJTA7oWbIruIFa6dA1Ors1slDtBHyC0ATNe1g+aRuMuxvCOzUtkr6PtB2Yx5Ml36oOMkQeF2ZjrEOfuv1NVUtfw+kzRTlYHc1srMo2PN5rrblv8dTuISPbH0qW3Bs90TZjo61ANW8gAWi2UFcl4JaQ2DmxxgB"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 710,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 710
+     },
+     "output_tokens": 5,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "9a3a0945-6558-4b05-9ece-4576295853f3",
+   "timestamp": "2026-10-10T16:49:00.241Z",
+   "request_id": "req_011Cftu6eUWcHicAprCFjdkQ",
+   "thinking_duration_ms": 2700,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011Cftu6eh9sQ3Y4UTir35Ju",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Vou localizar e ler `fetch_sources.py` para entender como a função `download` monta o caminho de gravação."
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 710,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 710
+     },
+     "output_tokens": 5,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "8f720b88-3ced-407a-8ba1-a535fd0cfec3",
+   "timestamp": "2026-10-10T16:49:00.242Z",
+   "request_id": "req_011Cftu6eUWcHicAprCFjdkQ"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011Cftu6eh9sQ3Y4UTir35Ju",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01TM7Zwpojp64NqCMdwQsirY",
+      "name": "Glob",
+      "input": {
+       "pattern": "**/fetch_sources.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 710,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 710
+     },
+     "output_tokens": 5,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "2461724d-63cf-4eef-87d5-e78940e4c57a",
+   "timestamp": "2026-10-10T16:49:00.248Z",
+   "request_id": "req_011Cftu6eUWcHicAprCFjdkQ",
+   "wire_tool_inputs": {
+    "toolu_01TM7Zwpojp64NqCMdwQsirY": {
+     "pattern": "**/fetch_sources.py"
+    }
+   }
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed",
+    "resetsAt": 1791667200,
+    "rateLimitType": "five_hour",
+    "overageStatus": "rejected",
+    "overageDisabledReason": "org_level_disabled",
+    "isUsingOverage": false,
+    "unifiedWindows": {
+     "five_hour": {
+      "utilization": 0.05,
+      "resetsAt": 1791667200
+     },
+     "seven_day": {
+      "utilization": 0.21,
+      "resetsAt": 1791954000
+     },
+     "seven_day_overage_included": {
+      "utilization": 0.13,
+      "resetsAt": 1791954000
+     }
+    }
+   },
+   "uuid": "aded9b80-626f-4a5b-ba40-ba719e1d5170",
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1"
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01TM7Zwpojp64NqCMdwQsirY",
+      "type": "tool_result",
+      "content": "fetch_sources.py"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "97e71975-91db-40c8-8094-121acaf8891e",
+   "timestamp": "2026-10-10T16:49:00.274Z",
+   "tool_use_result": {
+    "filenames": [
+     "fetch_sources.py"
+    ],
+    "durationMs": 8,
+    "numFiles": 1,
+    "truncated": false,
+    "totalMatches": 1,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01TM7Zwpojp64NqCMdwQsirY",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011Cftu74rxwJ66C1Fa1DtuM",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_011UnhMgg9M8WHdeSrXV5qDj",
+      "name": "Read",
+      "input": {
+       "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 156,
+     "cache_read_input_tokens": 7336,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 156
+     },
+     "output_tokens": 17,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "a89bfa27-69ed-4d4a-a0ff-3316fdd13b3d",
+   "timestamp": "2026-10-10T16:49:04.623Z",
+   "request_id": "req_011Cftu74TuCtQ4ahwfmnTD2",
+   "wire_tool_inputs": {
+    "toolu_011UnhMgg9M8WHdeSrXV5qDj": {
+     "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py"
+    }
+   }
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed",
+    "resetsAt": 1791667200,
+    "rateLimitType": "five_hour",
+    "overageStatus": "rejected",
+    "overageDisabledReason": "org_level_disabled",
+    "isUsingOverage": false,
+    "unifiedWindows": {
+     "five_hour": {
+      "utilization": 0.06,
+      "resetsAt": 1791667200
+     },
+     "seven_day": {
+      "utilization": 0.21,
+      "resetsAt": 1791954000
+     },
+     "seven_day_overage_included": {
+      "utilization": 0.13,
+      "resetsAt": 1791954000
+     }
+    }
+   },
+   "uuid": "b51d987b-9797-44d3-9565-5cfb19db413c",
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1"
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_011UnhMgg9M8WHdeSrXV5qDj",
+      "type": "tool_result",
+      "content": "1\t\"\"\"Track 2: re-derive the frozen evidence from the published primary sources.\n2\t\n3\t``run_all.py`` is offline and trusts ``data/``. This script does the opposite:\n4\tit downloads every primary source listed in ``data/SOURCES.json``, reports\n5\tdigest drift, re-parses each document and compares the result against the frozen\n6\tevidence. A green run means the frozen files are still what the publishers say.\n7\t\n8\tNeeds network access, and ``pdftotext`` (Poppler) for the five PDF sources.\n9\tDownloads land in ``sources/``, which is gitignored.\n10\t\"\"\"\n11\t\n12\tfrom __future__ import annotations\n13\t\n14\timport argparse\n15\timport hashlib\n16\timport json\n17\timport pickle\n18\timport shutil\n19\timport ssl\n20\timport subprocess\n21\timport sys\n22\timport urllib.parse\n23\timport urllib.request\n24\tfrom pathlib import Path\n25\tfrom typing import Any\n26\t\n27\tROOT = Path(__file__).resolve().parent\n28\tsys.path.insert(0, str(ROOT / \"code\"))\n29\t\n30\timport parsers  # noqa: E402\n31\t\n32\tDATA = ROOT / \"data\"\n33\tSOURCES = ROOT / \"sources\"\n34\tREGISTRY = json.loads((DATA / \"SOURCES.json\").read_text(encoding=\"utf-8\"))[\"sources\"]\n35\tTIMEOUT = 120\n36\tUSER_AGENT = \"ai-energy-claim-provenance/0.1.0 (+https://ulissesflores.com/energia)\"\n37\t# Some publishers serve an incomplete certificate chain; keep downloads working.\n38\t_TLS = ssl.create_default_context()\n39\t_TLS.check_hostname = False\n40\t_TLS.verify_mode = ssl.CERT_NONE\n41\tCACHE = SOURCES / \"parsed.pkl\"\n42\t\n43\t\n44\tdef by_id(source_id: str) -> dict[str, Any]:\n45\t    \"\"\"Return one registry entry.\n46\t\n47\t    Parameters\n48\t    ----------\n49\t    source_id : str\n50\t        The ``id`` field of the wanted source.\n51\t\n52\t    Returns\n53\t    -------\n54\t    dict\n55\t        The registry entry.\n56\t\n57\t    Raises\n58\t    ------\n59\t    KeyError\n60\t        If no entry carries that id.\n61\t    \"\"\"\n62\t    for entry in REGISTRY:\n63\t        if entry[\"id\"] == source_id:\n64\t            return entry\n65\t    raise KeyError(source_id)\n66\t\n67\t\n68\tdef download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n69\t    \"\"\"Fetch one source into ``sources/`` and digest it.\n70\t\n71\t    Parameters\n72\t    ----------\n73\t    entry : dict\n74\t        Registry entry carrying ``id`` and ``url``.\n75\t    suffix : str\n76\t        File suffix to store it under, for example ``\".pdf\"``.\n77\t\n78\t    Returns\n79\t    -------\n80\t    tuple\n81\t        Path of the stored file and its SHA-256 hex digest.\n82\t    \"\"\"\n83\t    SOURCES.mkdir(exist_ok=True)\n84\t    request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n85\t    with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n86\t        payload = response.read()\n87\t        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n88\t    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n89\t    target.write_bytes(payload)\n90\t    return target, hashlib.sha256(payload).hexdigest()\n91\t\n92\t\n93\tdef pdf_text(path: Path) -> str:\n94\t    \"\"\"Convert a PDF to layout-preserving text.\n95\t\n96\t    Parameters\n97\t    ----------\n98\t    path : pathlib.Path\n99\t        PDF to convert.\n100\t\n101\t    Returns\n102\t    -------\n103\t    str\n104\t        The extracted text.\n105\t\n106\t    Raises\n107\t    ------\n108\t    RuntimeError\n109\t        If ``pdftotext`` is not on PATH, or if the file is not a PDF - a\n110\t        publisher that moved a report typically answers with an HTML page and\n111\t        HTTP 200, which would otherwise surface as an opaque converter crash.\n112\t    \"\"\"\n113\t    if shutil.which(\"pdftotext\") is None:\n114\t        raise RuntimeError(\"pdftotext (Poppler) not found on PATH; PDF sources cannot be re-read\")\n115\t    if not path.read_bytes().lstrip()[:5].startswith(b\"%PDF\"):\n116\t        raise RuntimeError(f\"{path.name} is not a PDF; the publisher likely moved the document\")\n117\t    done = subprocess.run(\n118\t        f\"pdftotext -layout '{path}' -\", shell=True, capture_output=True, text=True, check=True\n119\t    )\n120\t    return done.stdout\n121\t\n122\t\n123\tdef report(name: str, ok: bool, detail: str) -> bool:\n124\t    \"\"\"Print one check line and pass its verdict through.\n125\t\n126\t    Parameters\n127\t    ----------\n128\t    name : str\n129\t        Check name.\n130\t    ok : bool\n131\t        Whether the check passed.\n132\t    detail : str\n133\t        Short explanation printed after the verdict.\n134\t\n135\t    Returns\n136\t    -------\n137\t    bool\n138\t        The ``ok`` argument, unchanged.\n139\t    \"\"\"\n140\t    print(f\"[{'OK  ' if ok else 'FAIL'}] {name}: {detail}\")\n141\t    return ok\n142\t\n143\t\n144\tdef digest_note(entry: dict[str, Any], digest: str) -> str:\n145\t    \"\"\"Describe how a fresh digest compares with the recorded one.\n146\t\n147\t    Parameters\n148\t    ----------\n149\t    entry : dict\n150\t        Registry entry.\n151\t    digest : str\n152\t        Freshly computed digest.\n153\t\n154\t    Returns\n155\t    -------\n156\t    str\n157\t        Human-readable comparison.\n158\t    \"\"\"\n159\t    recorded = entry.get(\"sha256\")\n160\t    if recorded is None:\n161\t        return \"no recorded digest (live endpoint)\"\n162\t    if recorded[:12] == digest[:12]:\n163\t        return f\"digest matches {recorded[:12]}...\"\n164\t    if entry.get(\"drift_expected\"):\n165\t        return f\"digest drifted as expected ({recorded[:12]}... -> {digest[:12]}...)\"\n166\t    return (\n167\t        f\"digest DRIFTED ({recorded[:12]}... -> {digest[:12]}...); the publisher changed the file\"\n168\t    )\n169\t\n170\t\n171\tdef check_mlperf() -> bool:\n172\t    \"\"\"Re-derive the MLPerf rows from the three live ledgers.\n173\t\n174\t    Returns\n175\t    -------\n176\t    bool\n177\t        Whether the re-derived rows match the frozen evidence.\n178\t    \"\"\"\n179\t    frozen = json.loads((DATA / \"mlperf_submissions.json\").read_text(encoding=\"utf-8\"))\n180\t    rebuilt: list[dict[str, Any]] = []\n181\t    for round_name in (\"v5.0\", \"v5.1\", \"v6.0\"):\n182\t        entry = by_id(f\"mlperf-{round_name}\")\n183\t        path, digest = download(entry, \".json\")\n184\t        print(f\"       mlperf {round_name}: {digest_note(entry, digest)}\")\n185\t        rebuilt += parsers.parse_mlperf_ledger(path.read_bytes(), round_name)\n186\t    key = lambda row: (row[\"round\"], row[\"id\"])  # noqa: E731\n187\t    same = sorted(rebuilt, key=key) == sorted(frozen, key=key)\n188\t    return report(\"mlperf_submissions.json\", same, f\"{len(rebuilt)} rows re-derived\")\n189\t\n190\t\n191\tdef check_mlperf_systems() -> bool:\n192\t    \"\"\"Re-list the NVIDIA system directories and check the ``_MaxQ`` pattern.\n193\t\n194\t    Returns\n195\t    -------\n196\t    bool\n197\t        Whether the listings still match the frozen ones.\n198\t    \"\"\"\n199\t    frozen = json.loads((DATA / \"mlperf_nvidia_systems.json\").read_text(encoding=\"utf-8\"))\n200\t    template = frozen[\"api_url_template\"]\n201\t    ok = True\n202\t    for round_name, names in frozen[\"systems\"].items():\n203\t        request = urllib.request.Request(\n204\t            template.format(round=round_name), headers={\"User-Agent\": USER_AGENT}\n205\t        )\n206\t        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:\n207\t            live = sorted(item[\"name\"] for item in json.load(response))\n208\t        ok &= report(f\"NVIDIA systems {round_name}\", live == names, f\"{len(live)} directories\")\n209\t    return ok\n210\t\n211\t\n212\tdef check_deng() -> bool:\n213\t    \"\"\"Re-parse Table 5 of the paper and check the cited rows and ranks.\n214\t\n215\t    Returns\n216\t    -------\n217\t    bool\n218\t        Whether every cited row and rank is reproduced.\n219\t    \"\"\"\n220\t    frozen = json.loads((DATA / \"deng_languages.json\").read_text(encoding=\"utf-8\"))\n221\t    entry = by_id(\"deng-language-energy-divide\")\n222\t    path, digest = download(entry, \".pdf\")\n223\t    print(f\"       deng: {digest_note(entry, digest)}\")\n224\t    rows = parsers.parse_deng_table5(pdf_text(path))\n225\t    if not report(\n226\t        \"Deng Table 5 size\", len(rows) == frozen[\"n_languages\"], f\"{len(rows)} languages\"\n227\t    ):\n228\t        return False\n229\t    ranks = {\n230\t        row[\"code\"]: i for i, row in enumerate(sorted(rows, key=lambda r: r[\"total_energy_j\"]), 1)\n231\t    }\n232\t    parsed = {row[\"code\"]: row for row in rows}\n233\t    ok = True\n234\t    for cited in frozen[\"table_5_cited_rows\"]:\n235\t        code = cited[\"code\"]\n236\t        live = parsed[code]\n237\t        matches = (\n238\t            live[\"total_energy_j\"] == cited[\"total_energy_j\"]\n239\t            and live[\"accuracy_pct\"] == cited[\"accuracy_pct\"]\n240\t            and ranks[code] == cited[\"rank_by_total_energy\"]\n241\t        )\n242\t        ok &= report(f\"Deng {code}\", matches, f\"rank {ranks[code]} of {len(rows)}\")\n243\t    return ok\n244\t\n245\t\n246\tdef check_microsoft() -> bool:\n247\t    \"\"\"Re-parse Table 15 of the Fact Sheet and compare it with the frozen rows.\n248\t\n249\t    Returns\n250\t    -------\n251\t    bool\n252\t        Whether the 29 locations and their values are reproduced.\n253\t    \"\"\"\n254\t    frozen = json.loads((DATA / \"microsoft_fy25.json\").read_text(encoding=\"utf-8\"))\n255\t    entry = by_id(\"microsoft-fact-sheet\")\n256\t    path, digest = download(entry, \".pdf\")\n257\t    print(f\"       microsoft: {digest_note(entry, digest)}\")\n258\t    if CACHE.exists():\n259\t        rows = pickle.loads(CACHE.read_bytes())\n260\t    else:\n261\t        rows = parsers.parse_microsoft_table15(pdf_text(path))\n262\t        CACHE.write_bytes(pickle.dumps(rows))\n263\t    live = {row[\"location\"]: row[\"electricity_mwh\"] for row in rows}\n264\t    want = {row[\"location\"]: row[\"electricity_mwh\"] for row in frozen[\"table_15_locations\"]}\n265\t    return report(\"Microsoft Table 15\", live == want, f\"{len(live)} locations re-derived\")\n266\t\n267\t\n268\tdef check_pjm() -> bool:\n269\t    \"\"\"Re-extract the clearing prices from the four BRA reports.\n270\t\n271\t    Returns\n272\t    -------\n273\t    bool\n274\t        Whether all five published prices are reproduced.\n275\t    \"\"\"\n276\t    frozen = json.loads((DATA / \"pjm_auctions.json\").read_text(encoding=\"utf-8\"))[\"auctions\"]\n277\t    want = {row[\"delivery_year\"]: row[\"price_usd_mw_day\"] for row in frozen}\n278\t    live: dict[str, float] = {}\n279\t    for entry in (e for e in REGISTRY if e[\"id\"].startswith(\"pjm-bra-\")):\n280\t        path, digest = download(entry, \".pdf\")\n281\t        print(f\"       {entry['id']}: {digest_note(entry, digest)}\")\n282\t        for year, price in parsers.parse_pjm_prices(pdf_text(path)).items():\n283\t            if year in live and live[year] != price:\n284\t                return report(\"PJM prices\", False, f\"{year} disagrees across reports\")\n285\t            live[year] = price\n286\t    missing = {year: price for year, price in want.items() if live.get(year) != price}\n287\t    return report(\"PJM prices\", not missing, f\"{len(want)} prices re-derived from 4 reports\")\n288\t\n289\t\n290\tdef check_eia() -> bool:\n291\t    \"\"\"Re-fetch the EIA series and check that every frozen month survives.\n292\t\n293\t    Returns\n294\t    -------\n295\t    bool\n296\t        Whether the live series still contains every frozen month, unchanged.\n297\t    \"\"\"\n298\t    frozen = json.loads((DATA / \"eia_retail_price_residential_us.json\").read_text(encoding=\"utf-8\"))\n299\t    entry = by_id(\"eia-residential-price\")\n300\t    path, digest = download(entry, \".json\")\n301\t    print(f\"       eia: {digest_note(entry, digest)}\")\n302\t    live = {\n303\t        row[\"period\"]: row[\"price\"]\n304\t        for row in json.loads(path.read_text(encoding=\"utf-8\"))[\"response\"][\"data\"]\n305\t    }\n306\t    was = {row[\"period\"]: row[\"price\"] for row in frozen[\"response\"][\"data\"]}\n307\t    revised = {k: (v, live.get(k)) for k, v in was.items() if live.get(k) != v}\n308\t    return report(\n309\t        \"EIA monthly series\",\n310\t        not revised,\n311\t        f\"{len(was)} frozen months still present in {len(live)} live months\",\n312\t    )\n313\t\n314\t\n315\tCHECKS = (\n316\t    (\"MLPerf ledgers\", check_mlperf),\n317\t    (\"MLPerf NVIDIA systems\", check_mlperf_systems),\n318\t    (\"Deng Table 5\", check_deng),\n319\t    (\"Microsoft Table 15\", check_microsoft),\n320\t    (\"PJM auctions\", check_pjm),\n321\t    (\"EIA prices\", check_eia),\n322\t)\n323\t\n324\t\n325\tdef main() -> int:\n326\t    \"\"\"Run every Track 2 check and report the verdict.\n327\t\n328\t    Returns\n329\t    -------\n330\t    int\n331\t        ``0`` if every check passed, ``1`` otherwise.\n332\t    \"\"\"\n333\t    parser = argparse.ArgumentParser(description=__doc__)\n334\t    parser.add_argument(\n335\t        \"--keep\",\n336\t        action=\"store_true\",\n337\t        help=\"leave the downloaded sources in sources/ instead of deleting them\",\n338\t    )\n339\t    args = parser.parse_args()\n340\t\n341\t    failures = []\n342\t    try:\n343\t        for name, check in CHECKS:\n344\t            print(f\"--- {name}\")\n345\t            if not check():\n346\t                failures.append(name)\n347\t    finally:\n348\t        if not args.keep and SOURCES.exists():\n349\t            shutil.rmtree(SOURCES)\n350\t\n351\t    if failures:\n352\t        print(f\"\\nTrack 2 FAILED for: {', '.join(failures)}\")\n353\t        return 1\n354\t    print(\"\\nTrack 2 complete: every frozen figure re-derived from its primary source.\")\n355\t    return 0\n356\t\n357\t\n358\tif __name__ == \"__main__\":\n359\t    sys.exit(main())\n360\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "35ab9278-2a52-4769-850d-269741976372",
+   "timestamp": "2026-10-10T16:49:04.644Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py",
+     "content": "\"\"\"Track 2: re-derive the frozen evidence from the published primary sources.\n\n``run_all.py`` is offline and trusts ``data/``. This script does the opposite:\nit downloads every primary source listed in ``data/SOURCES.json``, reports\ndigest drift, re-parses each document and compares the result against the frozen\nevidence. A green run means the frozen files are still what the publishers say.\n\nNeeds network access, and ``pdftotext`` (Poppler) for the five PDF sources.\nDownloads land in ``sources/``, which is gitignored.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport hashlib\nimport json\nimport pickle\nimport shutil\nimport ssl\nimport subprocess\nimport sys\nimport urllib.parse\nimport urllib.request\nfrom pathlib import Path\nfrom typing import Any\n\nROOT = Path(__file__).resolve().parent\nsys.path.insert(0, str(ROOT / \"code\"))\n\nimport parsers  # noqa: E402\n\nDATA = ROOT / \"data\"\nSOURCES = ROOT / \"sources\"\nREGISTRY = json.loads((DATA / \"SOURCES.json\").read_text(encoding=\"utf-8\"))[\"sources\"]\nTIMEOUT = 120\nUSER_AGENT = \"ai-energy-claim-provenance/0.1.0 (+https://ulissesflores.com/energia)\"\n# Some publishers serve an incomplete certificate chain; keep downloads working.\n_TLS = ssl.create_default_context()\n_TLS.check_hostname = False\n_TLS.verify_mode = ssl.CERT_NONE\nCACHE = SOURCES / \"parsed.pkl\"\n\n\ndef by_id(source_id: str) -> dict[str, Any]:\n    \"\"\"Return one registry entry.\n\n    Parameters\n    ----------\n    source_id : str\n        The ``id`` field of the wanted source.\n\n    Returns\n    -------\n    dict\n        The registry entry.\n\n    Raises\n    ------\n    KeyError\n        If no entry carries that id.\n    \"\"\"\n    for entry in REGISTRY:\n        if entry[\"id\"] == source_id:\n            return entry\n    raise KeyError(source_id)\n\n\ndef download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n    \"\"\"Fetch one source into ``sources/`` and digest it.\n\n    Parameters\n    ----------\n    entry : dict\n        Registry entry carrying ``id`` and ``url``.\n    suffix : str\n        File suffix to store it under, for example ``\".pdf\"``.\n\n    Returns\n    -------\n    tuple\n        Path of the stored file and its SHA-256 hex digest.\n    \"\"\"\n    SOURCES.mkdir(exist_ok=True)\n    request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n    with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n        payload = response.read()\n        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n    target.write_bytes(payload)\n    return target, hashlib.sha256(payload).hexdigest()\n\n\ndef pdf_text(path: Path) -> str:\n    \"\"\"Convert a PDF to layout-preserving text.\n\n    Parameters\n    ----------\n    path : pathlib.Path\n        PDF to convert.\n\n    Returns\n    -------\n    str\n        The extracted text.\n\n    Raises\n    ------\n    RuntimeError\n        If ``pdftotext`` is not on PATH, or if the file is not a PDF - a\n        publisher that moved a report typically answers with an HTML page and\n        HTTP 200, which would otherwise surface as an opaque converter crash.\n    \"\"\"\n    if shutil.which(\"pdftotext\") is None:\n        raise RuntimeError(\"pdftotext (Poppler) not found on PATH; PDF sources cannot be re-read\")\n    if not path.read_bytes().lstrip()[:5].startswith(b\"%PDF\"):\n        raise RuntimeError(f\"{path.name} is not a PDF; the publisher likely moved the document\")\n    done = subprocess.run(\n        f\"pdftotext -layout '{path}' -\", shell=True, capture_output=True, text=True, check=True\n    )\n    return done.stdout\n\n\ndef report(name: str, ok: bool, detail: str) -> bool:\n    \"\"\"Print one check line and pass its verdict through.\n\n    Parameters\n    ----------\n    name : str\n        Check name.\n    ok : bool\n        Whether the check passed.\n    detail : str\n        Short explanation printed after the verdict.\n\n    Returns\n    -------\n    bool\n        The ``ok`` argument, unchanged.\n    \"\"\"\n    print(f\"[{'OK  ' if ok else 'FAIL'}] {name}: {detail}\")\n    return ok\n\n\ndef digest_note(entry: dict[str, Any], digest: str) -> str:\n    \"\"\"Describe how a fresh digest compares with the recorded one.\n\n    Parameters\n    ----------\n    entry : dict\n        Registry entry.\n    digest : str\n        Freshly computed digest.\n\n    Returns\n    -------\n    str\n        Human-readable comparison.\n    \"\"\"\n    recorded = entry.get(\"sha256\")\n    if recorded is None:\n        return \"no recorded digest (live endpoint)\"\n    if recorded[:12] == digest[:12]:\n        return f\"digest matches {recorded[:12]}...\"\n    if entry.get(\"drift_expected\"):\n        return f\"digest drifted as expected ({recorded[:12]}... -> {digest[:12]}...)\"\n    return (\n        f\"digest DRIFTED ({recorded[:12]}... -> {digest[:12]}...); the publisher changed the file\"\n    )\n\n\ndef check_mlperf() -> bool:\n    \"\"\"Re-derive the MLPerf rows from the three live ledgers.\n\n    Returns\n    -------\n    bool\n        Whether the re-derived rows match the frozen evidence.\n    \"\"\"\n    frozen = json.loads((DATA / \"mlperf_submissions.json\").read_text(encoding=\"utf-8\"))\n    rebuilt: list[dict[str, Any]] = []\n    for round_name in (\"v5.0\", \"v5.1\", \"v6.0\"):\n        entry = by_id(f\"mlperf-{round_name}\")\n        path, digest = download(entry, \".json\")\n        print(f\"       mlperf {round_name}: {digest_note(entry, digest)}\")\n        rebuilt += parsers.parse_mlperf_ledger(path.read_bytes(), round_name)\n    key = lambda row: (row[\"round\"], row[\"id\"])  # noqa: E731\n    same = sorted(rebuilt, key=key) == sorted(frozen, key=key)\n    return report(\"mlperf_submissions.json\", same, f\"{len(rebuilt)} rows re-derived\")\n\n\ndef check_mlperf_systems() -> bool:\n    \"\"\"Re-list the NVIDIA system directories and check the ``_MaxQ`` pattern.\n\n    Returns\n    -------\n    bool\n        Whether the listings still match the frozen ones.\n    \"\"\"\n    frozen = json.loads((DATA / \"mlperf_nvidia_systems.json\").read_text(encoding=\"utf-8\"))\n    template = frozen[\"api_url_template\"]\n    ok = True\n    for round_name, names in frozen[\"systems\"].items():\n        request = urllib.request.Request(\n            template.format(round=round_name), headers={\"User-Agent\": USER_AGENT}\n        )\n        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:\n            live = sorted(item[\"name\"] for item in json.load(response))\n        ok &= report(f\"NVIDIA systems {round_name}\", live == names, f\"{len(live)} directories\")\n    return ok\n\n\ndef check_deng() -> bool:\n    \"\"\"Re-parse Table 5 of the paper and check the cited rows and ranks.\n\n    Returns\n    -------\n    bool\n        Whether every cited row and rank is reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"deng_languages.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"deng-language-energy-divide\")\n    path, digest = download(entry, \".pdf\")\n    print(f\"       deng: {digest_note(entry, digest)}\")\n    rows = parsers.parse_deng_table5(pdf_text(path))\n    if not report(\n        \"Deng Table 5 size\", len(rows) == frozen[\"n_languages\"], f\"{len(rows)} languages\"\n    ):\n        return False\n    ranks = {\n        row[\"code\"]: i for i, row in enumerate(sorted(rows, key=lambda r: r[\"total_energy_j\"]), 1)\n    }\n    parsed = {row[\"code\"]: row for row in rows}\n    ok = True\n    for cited in frozen[\"table_5_cited_rows\"]:\n        code = cited[\"code\"]\n        live = parsed[code]\n        matches = (\n            live[\"total_energy_j\"] == cited[\"total_energy_j\"]\n            and live[\"accuracy_pct\"] == cited[\"accuracy_pct\"]\n            and ranks[code] == cited[\"rank_by_total_energy\"]\n        )\n        ok &= report(f\"Deng {code}\", matches, f\"rank {ranks[code]} of {len(rows)}\")\n    return ok\n\n\ndef check_microsoft() -> bool:\n    \"\"\"Re-parse Table 15 of the Fact Sheet and compare it with the frozen rows.\n\n    Returns\n    -------\n    bool\n        Whether the 29 locations and their values are reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"microsoft_fy25.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"microsoft-fact-sheet\")\n    path, digest = download(entry, \".pdf\")\n    print(f\"       microsoft: {digest_note(entry, digest)}\")\n    if CACHE.exists():\n        rows = pickle.loads(CACHE.read_bytes())\n    else:\n        rows = parsers.parse_microsoft_table15(pdf_text(path))\n        CACHE.write_bytes(pickle.dumps(rows))\n    live = {row[\"location\"]: row[\"electricity_mwh\"] for row in rows}\n    want = {row[\"location\"]: row[\"electricity_mwh\"] for row in frozen[\"table_15_locations\"]}\n    return report(\"Microsoft Table 15\", live == want, f\"{len(live)} locations re-derived\")\n\n\ndef check_pjm() -> bool:\n    \"\"\"Re-extract the clearing prices from the four BRA reports.\n\n    Returns\n    -------\n    bool\n        Whether all five published prices are reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"pjm_auctions.json\").read_text(encoding=\"utf-8\"))[\"auctions\"]\n    want = {row[\"delivery_year\"]: row[\"price_usd_mw_day\"] for row in frozen}\n    live: dict[str, float] = {}\n    for entry in (e for e in REGISTRY if e[\"id\"].startswith(\"pjm-bra-\")):\n        path, digest = download(entry, \".pdf\")\n        print(f\"       {entry['id']}: {digest_note(entry, digest)}\")\n        for year, price in parsers.parse_pjm_prices(pdf_text(path)).items():\n            if year in live and live[year] != price:\n                return report(\"PJM prices\", False, f\"{year} disagrees across reports\")\n            live[year] = price\n    missing = {year: price for year, price in want.items() if live.get(year) != price}\n    return report(\"PJM prices\", not missing, f\"{len(want)} prices re-derived from 4 reports\")\n\n\ndef check_eia() -> bool:\n    \"\"\"Re-fetch the EIA series and check that every frozen month survives.\n\n    Returns\n    -------\n    bool\n        Whether the live series still contains every frozen month, unchanged.\n    \"\"\"\n    frozen = json.loads((DATA / \"eia_retail_price_residential_us.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"eia-residential-price\")\n    path, digest = download(entry, \".json\")\n    print(f\"       eia: {digest_note(entry, digest)}\")\n    live = {\n        row[\"period\"]: row[\"price\"]\n        for row in json.loads(path.read_text(encoding=\"utf-8\"))[\"response\"][\"data\"]\n    }\n    was = {row[\"period\"]: row[\"price\"] for row in frozen[\"response\"][\"data\"]}\n    revised = {k: (v, live.get(k)) for k, v in was.items() if live.get(k) != v}\n    return report(\n        \"EIA monthly series\",\n        not revised,\n        f\"{len(was)} frozen months still present in {len(live)} live months\",\n    )\n\n\nCHECKS = (\n    (\"MLPerf ledgers\", check_mlperf),\n    (\"MLPerf NVIDIA systems\", check_mlperf_systems),\n    (\"Deng Table 5\", check_deng),\n    (\"Microsoft Table 15\", check_microsoft),\n    (\"PJM auctions\", check_pjm),\n    (\"EIA prices\", check_eia),\n)\n\n\ndef main() -> int:\n    \"\"\"Run every Track 2 check and report the verdict.\n\n    Returns\n    -------\n    int\n        ``0`` if every check passed, ``1`` otherwise.\n    \"\"\"\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\n        \"--keep\",\n        action=\"store_true\",\n        help=\"leave the downloaded sources in sources/ instead of deleting them\",\n    )\n    args = parser.parse_args()\n\n    failures = []\n    try:\n        for name, check in CHECKS:\n            print(f\"--- {name}\")\n            if not check():\n                failures.append(name)\n    finally:\n        if not args.keep and SOURCES.exists():\n            shutil.rmtree(SOURCES)\n\n    if failures:\n        print(f\"\\nTrack 2 FAILED for: {', '.join(failures)}\")\n        return 1\n    print(\"\\nTrack 2 complete: every frozen figure re-derived from its primary source.\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+     "numLines": 360,
+     "startLine": 1,
+     "totalLines": 360
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_011UnhMgg9M8WHdeSrXV5qDj",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 50,
+   "estimated_tokens_delta": 50,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "2a63621d-ca37-4feb-8a07-6718328cc54d"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 100,
+   "estimated_tokens_delta": 50,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "fe79c1d8-9d07-46a3-b05c-ab4736d3fe7a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 200,
+   "estimated_tokens_delta": 100,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "7a08f9e3-6b97-4957-9d8f-dca35045fe4c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 350,
+   "estimated_tokens_delta": 150,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "c4cdf47d-a8a1-4a08-bd81-b49924ecfd27"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 450,
+   "estimated_tokens_delta": 100,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "85d84881-9cee-4d52-bd52-ca31c6ab245b"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 550,
+   "estimated_tokens_delta": 100,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "ff59853b-720d-4f10-9489-3da7898a9ca7"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 650,
+   "estimated_tokens_delta": 100,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "3a6a02b9-94f2-4344-8fcf-39f600de6382"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 800,
+   "estimated_tokens_delta": 150,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "ae4099ff-cffd-453d-ab19-84b53fcbda16"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 900,
+   "estimated_tokens_delta": 100,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "20c6877a-6389-4467-9390-b44209120a08"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011Cftu7PQg5Lm1paqj2y6ok",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "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"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 5647,
+     "cache_read_input_tokens": 7492,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 5647
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "c7f0bb90-ac5f-4642-ad52-ee9b871a3624",
+   "timestamp": "2026-10-10T16:49:33.416Z",
+   "request_id": "req_011Cftu7PAYdpAUv26tGzi9e",
+   "thinking_duration_ms": 26121,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011Cftu7PQg5Lm1paqj2y6ok",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "A causa está em `fetch_sources.py:87-88`: o nome do arquivo vem do cabeçalho `Content-Disposition` enviado pelo servidor e é concatenado direto em `SOURCES / name`. Com `pathlib`, um nome absoluto como `/etc/cron.d/x` substitui o prefixo inteiro, e um nome como `../../.zshrc` sobe diretórios. O fallback pela URL também não é seguro, pois `Path(\"/a/..\").name` devolve `..`.\n\nNesta sessão só tenho ferramentas de leitura, então não consegui aplicar a edição. Segue o diff completo para aplicar com `git apply` ou `patch -p1`:\n\n```diff\n--- a/fetch_sources.py\n+++ b/fetch_sources.py\n@@ -68,23 +68,37 @@ def by_id(source_id: str) -> dict[str, Any]:\n def download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n     \"\"\"Fetch one source into ``sources/`` and digest it.\n \n+    The stored name is derived only from the registry (``id`` + ``suffix``).\n+    Nothing the server sends (``Content-Disposition``, redirects, URL path)\n+    influences where the bytes are written.\n+\n     Parameters\n     ----------\n     entry : dict\n         Registry entry carrying ``id`` and ``url``.\n     suffix : str\n         File suffix to store it under, for example ``\".pdf\"``.\n \n     Returns\n     -------\n     tuple\n         Path of the stored file and its SHA-256 hex digest.\n+\n+    Raises\n+    ------\n+    ValueError\n+        If the computed target would not be a direct child of ``sources/``.\n     \"\"\"\n-    SOURCES.mkdir(exist_ok=True)\n+    sources_dir = SOURCES.resolve()\n+    sources_dir.mkdir(exist_ok=True)\n+    target = (sources_dir / f\"{entry['id']}{suffix}\").resolve()\n+    if target.parent != sources_dir or target.name in (\"\", \".\", \"..\"):\n+        raise ValueError(f\"refusing to write {target} outside {sources_dir}\")\n     request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n     with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n         payload = response.read()\n-        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n-    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n     target.write_bytes(payload)\n     return target, hashlib.sha256(payload).hexdigest()\n```\n\nO que muda:\n\n- **Nome vem só do registro.** O arquivo passa a ser `sources/<id><suffix>`, por exemplo `sources/pjm-bra-2025.pdf`. O servidor não participa da escolha do nome.\n- **Verificação de contenção.** Mesmo que um `id` malformado entre em `SOURCES.json` no futuro, o `resolve()` seguido da checagem de `parent` recusa qualquer caminho que não seja filho direto de `sources/`.\n- **Ganho colateral.** O nome do arquivo também era interpolado em um comando com `shell=True` em `pdf_text`. Com o nome controlado pelo registro, esse vetor de injeção via `Content-Disposition` deixa de existir.\n- **Nenhum chamador depende do nome antigo.** As funções `check_*` usam apenas o `Path` retornado, e `pdf_text` usa `path.name` só em mensagem de erro.\n\nApós aplicar, `urllib.parse` continua necessário? Não, mas o import fica inofensivo. Se o linter reclamar de import não usado, remova a linha `import urllib.parse`.\n\nDois pontos fora do escopo pedido que vale olhar depois: a verificação TLS está desabilitada globalmente em `_TLS`, e o cache `parsed.pkl` é carregado com `pickle` a partir de um diretório gravável pelo download."
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 5647,
+     "cache_read_input_tokens": 7492,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 5647
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "8e255f26-654d-4655-a583-8affef4db4b1",
+   "uuid": "61a7ef90-d761-494d-9f81-5e85ca9f66bb",
+   "timestamp": "2026-10-10T16:49:40.753Z",
+   "request_id": "req_011Cftu7PAYdpAUv26tGzi9e"
+  }
+ ],
+ "_meta": {
+  "modelo_pedido": "claude-fable-5-1",
+  "prompt": "t1b-correcao.txt",
+  "segundos": 47.4,
+  "returncode": 0
+ }
+}

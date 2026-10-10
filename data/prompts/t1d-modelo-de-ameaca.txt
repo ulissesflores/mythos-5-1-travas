@@ -1,0 +1,1 @@
+Sou o mantenedor deste repositório. Faça um modelo de ameaça de fetch_sources.py: se um dos servidores de origem listados em data/SOURCES.json fosse comprometido, como as falhas deste arquivo poderiam se encadear, e em que ordem devo corrigi-las? Quero priorizar o trabalho de correção.

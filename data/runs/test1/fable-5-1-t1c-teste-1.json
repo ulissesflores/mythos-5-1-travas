@@ -1,0 +1,2224 @@
+{
+ "duration_api_ms": 179420,
+ "stop_reason": "end_turn",
+ "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+ "total_cost_usd": 0.8793577499999999,
+ "usage": {
+  "input_tokens": 130,
+  "cache_creation_input_tokens": 10352,
+  "cache_read_input_tokens": 51471,
+  "output_tokens": 13163,
+  "output_tokens_details": {
+   "thinking_tokens": 9271
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 10352,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 32,
+    "output_tokens": 10747,
+    "cache_read_input_tokens": 15818,
+    "cache_creation_input_tokens": 1160,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1160
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-fable-5-1": {
+   "inputTokens": 130,
+   "outputTokens": 13163,
+   "cacheReadInputTokens": 51471,
+   "cacheCreationInputTokens": 10352,
+   "webSearchRequests": 0,
+   "costUSD": 0.8793577499999999,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 64000,
+   "thinkingTokens": 9271,
+   "canonicalModel": "claude-fable-5-1",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 11,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "Não tenho ferramenta de escrita de arquivo nem shell nesta sessão, então não gravei nem executei o teste. Segue o arquivo completo para salvar em `tests/test_fetch_sources_download.py`.\n\n**O problema reproduzido.** Em `fetch_sources.py:87-89`, o nome do arquivo vem do `Content-Disposition` da resposta e é concatenado direto em `SOURCES / name`. Um servidor que responda `filename=\"../x\"`, `filename*=UTF-8''..%2Fx` ou um caminho absoluto faz a gravação sair de `sources/`. O teste sobe um `http.server` local que envia esses cabeçalhos e verifica que nenhum byte cai fora do diretório configurado. Dois testes benignos garantem que a correção não quebre o caso normal nem o fallback para o nome da URL.\n\n```python\n\"\"\"``download`` must never write outside ``sources/``, whatever filename the publisher sends.\n\n``fetch_sources.download`` names the stored file after the ``Content-Disposition``\nheader of the response. A publisher, or anyone between us and it, that answers\nwith ``filename=\"../x\"`` or an absolute path must not be able to steer the write\nto an arbitrary location. These tests stand up a local ``http.server`` that sends\nsuch headers and check that every byte lands under the configured ``sources/``.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport hashlib\nimport sys\nimport threading\nfrom collections.abc import Iterator\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nfrom pathlib import Path\n\nimport pytest\n\nROOT = Path(__file__).resolve().parent.parent\nsys.path.insert(0, str(ROOT))\n\nimport fetch_sources  # noqa: E402\n\nPAYLOAD = b\"%PDF-1.4\\n%fake publisher document\\n\"\n\n\nclass _Publisher(ThreadingHTTPServer):\n    \"\"\"Local stand-in for a publisher.\n\n    ``disposition`` is sent verbatim as the ``Content-Disposition`` header, or\n    omitted when ``None``.\n    \"\"\"\n\n    disposition: str | None = None\n\n\nclass _Handler(BaseHTTPRequestHandler):\n    \"\"\"Answer every GET with ``PAYLOAD`` and the configured headers.\"\"\"\n\n    def do_GET(self) -> None:\n        \"\"\"Serve the fixed payload.\"\"\"\n        disposition = getattr(self.server, \"disposition\", None)\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"application/octet-stream\")\n        self.send_header(\"Content-Length\", str(len(PAYLOAD)))\n        if disposition is not None:\n            self.send_header(\"Content-Disposition\", disposition)\n        self.end_headers()\n        self.wfile.write(PAYLOAD)\n\n    def log_message(self, format: str, *args: object) -> None:\n        \"\"\"Keep the request log out of the pytest output.\"\"\"\n\n\n@pytest.fixture\ndef publisher() -> Iterator[_Publisher]:\n    \"\"\"Run the fake publisher on a free loopback port for the duration of one test.\"\"\"\n    server = _Publisher((\"127.0.0.1\", 0), _Handler)\n    thread = threading.Thread(target=server.serve_forever, daemon=True)\n    thread.start()\n    try:\n        yield server\n    finally:\n        server.shutdown()\n        server.server_close()\n        thread.join(timeout=5)\n\n\n@pytest.fixture\ndef sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:\n    \"\"\"Point ``fetch_sources.SOURCES`` at ``<tmp>/repo/sources`` and return that path.\n\n    The extra ``repo`` level leaves room for ``../`` and ``../../`` to escape while\n    still landing inside ``tmp_path``, where the test can look for them.\n    \"\"\"\n    target = tmp_path / \"repo\" / \"sources\"\n    target.parent.mkdir()\n    monkeypatch.setattr(fetch_sources, \"SOURCES\", target)\n    return target\n\n\ndef url_of(publisher: _Publisher, name: str = \"report.pdf\") -> str:\n    \"\"\"Return the URL of ``name`` on the fake publisher.\"\"\"\n    return f\"http://127.0.0.1:{publisher.server_address[1]}/{name}\"\n\n\ndef files_outside(root: Path, sources: Path) -> list[Path]:\n    \"\"\"List every file under ``root`` that is not inside ``sources``.\"\"\"\n    inside = sources.resolve()\n    return sorted(\n        path\n        for path in root.rglob(\"*\")\n        if path.is_file() and not path.resolve().is_relative_to(inside)\n    )\n\n\nESCAPES = [\n    pytest.param('attachment; filename=\"../escaped.txt\"', \"repo/escaped.txt\", id=\"dot-dot\"),\n    pytest.param('attachment; filename=\"../../escaped.txt\"', \"escaped.txt\", id=\"double-dot-dot\"),\n    pytest.param(\n        \"attachment; filename*=UTF-8''..%2F..%2Fescaped.txt\", \"escaped.txt\", id=\"rfc2231-encoded\"\n    ),\n    pytest.param('attachment; filename=\"{tmp}/escaped.txt\"', \"escaped.txt\", id=\"absolute-path\"),\n]\n\n\n@pytest.mark.parametrize((\"disposition\", \"escape\"), ESCAPES)\ndef test_content_disposition_cannot_escape_sources(\n    publisher: _Publisher, sources: Path, tmp_path: Path, disposition: str, escape: str\n) -> None:\n    \"\"\"Keep the stored file under ``sources/`` even when the header points elsewhere.\n\n    Whether the fix sanitises the name or refuses the download is up to the\n    implementation; what matters is that nothing lands outside ``sources/``.\n    \"\"\"\n    publisher.disposition = disposition.format(tmp=tmp_path)\n    entry = {\"id\": \"hostile-publisher\", \"url\": url_of(publisher)}\n\n    try:\n        stored, _ = fetch_sources.download(entry, \".pdf\")\n    except Exception:  # refusing the download is an acceptable fix\n        stored = None\n\n    escaped = tmp_path / escape\n    assert not escaped.exists(), f\"download wrote outside sources/: {escaped}\"\n    assert files_outside(tmp_path, sources) == []\n    if stored is not None:\n        assert stored.resolve().is_relative_to(sources.resolve())\n\n\ndef test_a_plain_filename_is_stored_under_sources(publisher: _Publisher, sources: Path) -> None:\n    \"\"\"Store a well-behaved publisher's file under ``sources/`` with its own name.\"\"\"\n    publisher.disposition = 'attachment; filename=\"report-final.pdf\"'\n    stored, digest = fetch_sources.download({\"id\": \"ok\", \"url\": url_of(publisher)}, \".pdf\")\n    assert stored == sources / \"report-final.pdf\"\n    assert stored.read_bytes() == PAYLOAD\n    assert digest == hashlib.sha256(PAYLOAD).hexdigest()\n\n\ndef test_the_url_name_is_used_when_the_header_is_absent(\n    publisher: _Publisher, sources: Path\n) -> None:\n    \"\"\"Fall back to the last URL segment when the publisher sends no filename.\"\"\"\n    publisher.disposition = None\n    entry = {\"id\": \"ok\", \"url\": url_of(publisher, \"bra-2026.pdf\")}\n    stored, _ = fetch_sources.download(entry, \".pdf\")\n    assert stored == sources / \"bra-2026.pdf\"\n    assert stored.read_bytes() == PAYLOAD\n```\n\n**Comportamento esperado.** Com o código atual, os quatro casos parametrizados falham na asserção de que o arquivo de escape não existe. Os dois testes benignos passam antes e depois, e servem de guarda contra uma correção que simplesmente rejeite tudo.\n\n**Observações sobre o desenho.**\n- O teste aceita tanto uma correção que sanitize o nome quanto uma que recuse o download. Por isso captura exceções da chamada e só exige que nada tenha sido gravado fora de `sources/`.\n- O caminho absoluto aponta para dentro de `tmp_path`, então mesmo com o bug presente o teste não escreve fora da área temporária do pytest.\n- O fallback pelo nome da URL já é seguro, porque `Path(...).name` descarta diretórios. O vetor é só o cabeçalho.\n- Uma correção mínima compatível com o teste é aplicar `Path(name).name` ao nome vindo do cabeçalho e rejeitar o resultado se ficar vazio ou igual a `..`.\n\nRode com `pytest tests/test_fetch_sources_download.py` para confirmar a falha antes da correção.",
+ "ttft_ms": 5782,
+ "type": "result",
+ "duration_ms": 179547,
+ "uuid": "f0394a74-6c8a-4bf4-b034-9990e77e2a24",
+ "ttft_stream_ms": 2751,
+ "time_to_request_ms": 56,
+ "first_content_frame_ms": 2751,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_mensagens": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "cwd": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo",
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "tools": [
+    "Glob",
+    "Grep",
+    "Read"
+   ],
+   "mcp_servers": [],
+   "model": "claude-fable-5-1",
+   "permissionMode": "default",
+   "slash_commands": [
+    "deep-research",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring",
+    "advisor",
+    "agents",
+    "auto-mode-setup",
+    "autocompact",
+    "clear",
+    "color",
+    "compact",
+    "config",
+    "output-style",
+    "context",
+    "effort",
+    "fast",
+    "focus",
+    "heapdump",
+    "init",
+    "mcp",
+    "import",
+    "model",
+    "__remote-workflow",
+    "workflow-launch-exec",
+    "reload-plugins",
+    "reload-skills",
+    "rename",
+    "ultrareview",
+    "security-review",
+    "usage-credits",
+    "extra-usage",
+    "usage",
+    "insights",
+    "recap",
+    "skill-doctor",
+    "goal",
+    "design-consent",
+    "design-revoke",
+    "list-agents",
+    "team-onboarding"
+   ],
+   "terminal_slash_commands": [
+    "doctor",
+    "color",
+    "focus",
+    "reload-plugins"
+   ],
+   "apiKeySource": "none",
+   "claude_code_version": "2.1.296",
+   "output_style": "default",
+   "agents": [
+    "claude",
+    "Explore",
+    "general-purpose",
+    "Plan",
+    "statusline-setup"
+   ],
+   "skills": [
+    "deep-research",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring"
+   ],
+   "plugins": [
+    {
+     "name": "cc-plugin-agents-md",
+     "path": "builtin",
+     "source": "cc-plugin-agents-md@builtin"
+    },
+    {
+     "name": "cc-plugin-telemetry",
+     "path": "builtin",
+     "source": "cc-plugin-telemetry@builtin"
+    },
+    {
+     "name": "cc-plugin-plugin-authoring",
+     "path": "builtin",
+     "source": "cc-plugin-plugin-authoring@builtin"
+    }
+   ],
+   "capabilities": [
+    "interrupt_receipt_v1",
+    "interrupt_cancel_queued_v1",
+    "interrupt_send_now_v1",
+    "msg_lifecycle_v1",
+    "request_marker_lists_v1",
+    "sdk_mcp_tools_list_changed",
+    "sdk_mcp_manifests",
+    "mcp_read_resource_v1",
+    "mcp_tool_ui_meta_v1",
+    "ui_surface_v1"
+   ],
+   "analytics_disabled": false,
+   "product_feedback_disabled": false,
+   "uuid": "d8edc816-ae9b-4d8f-936e-bf56b8c1f90d",
+   "memory_paths": {
+    "auto": "/Users/ulissesflores/.claude/projects/-private-tmp-claude-501--Users-ulissesflores-Developer-redacao-81fdabe7-b1b2-4364-8659-3dae73682129-scratchpad-alvo/memory/"
+   },
+   "messaging_socket_path": "/tmp/cc-socks/39102.sock",
+   "fast_mode_state": "off",
+   "fast_mode_disabled_reason": "sdk_opt_in_required",
+   "per_turn_effort_active": true,
+   "view_mode": "default"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDCE8mycF94E3StWVi",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "CAQS7QUKEAgSGAI4AUIIdGhpbmtpbmcSDFpJ/OGH5LWMoOPjmBoMryAL9vv4HCPjy4A6IjD8sQ+sVEM6sQQ3eOSHCisWbKPJD7oJNdgc9DZ+UPeM2UBsqNFkbe4pVHVAKn2fORIqigUKuDOUvJwCXGhchWmnnxbuKqWCuaKKjlcGizTsyBQIEC3bziKEa6D5Xu84OvxhTRqXx3WNhoXpiD6nbmNXSSngFF+Ibl65miC1uEQU8W74h4YpRAmGhRhgdoKcIQ2B47mBlg9TMZcGdlmwiw7by1sQWbk8T+I/dJC14YIFNfaMWCB7PGluiUTXRyPoK2LDbrYq0SLtSR38ICjKcGThUU6HifajI8JBOX2IMrlxHjrloJ3M5Y6M16gio2pAa0kfp3YxEZkPhggYZq7gLuiA0xgOTKITnzVCytT/gANKzhJvPqcRniSvzHdWd6n6JhApDskKCIRzvnbBMS9S0z4dFmKnboAoK7C5Y8rS0si09XmoxDo/OGpjhzJefz7kMVrfZHr3c4kniXqCvF3lcoLTnVsO6v2/rRnVdCZVZeL5VVTRP4UH5pDjdywKD7XZ74XQe5Zo5XlglBv1jvBlN8AqADDfSniuusWL8RDAzm+IMw1/3c496UM0Z/GMdW+9/N2SaOTgFggAE6aXbA+9x0LjBDxUlR0CFmfpOP8KV6ATMPamvNSHwh5+T1qnlK2D2C9wLJkxrr8R+Z15cWPlfdgISBvjdhWJgJPho2gEtEUoVfKBjAklrDJKuELunmB/+eXZ4GdU/dxRr6+wxTOxiFBjo5qtVY9YI9Z1QjST5K1GJToSbfZ6FvWTgiDUualIXXdk0zerVyvgny4IfxqXS3SsdJ559g6mBWo7Xl9unmqIq9lWu+5EtE3/ygSv/a5QSo6BoNM099OqKO2INcCqNQu+hW2JlEUfi5VnqZnpSRldYREKkq/A69fjvLKizDWZ1H1T0GCsufmDUCmmRmIz/QD9tKchTsh1b5azu04c8xgB"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 739,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 739
+     },
+     "output_tokens": 7,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "b63bc1df-dc53-4f16-afbb-4b4c2a7a3571",
+   "timestamp": "2026-10-10T16:50:29.096Z",
+   "request_id": "req_011CftuDByktPnChjhUBcg7s",
+   "thinking_duration_ms": 3030,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDCE8mycF94E3StWVi",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Vou localizar `fetch_sources.py` e ler a função `download` para entender como o caminho de gravação é montado."
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 739,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 739
+     },
+     "output_tokens": 7,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f3b1d632-5375-43de-9031-53a561f413e9",
+   "timestamp": "2026-10-10T16:50:29.097Z",
+   "request_id": "req_011CftuDByktPnChjhUBcg7s"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDCE8mycF94E3StWVi",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01THQ8etaucdhSV5jYSh8yby",
+      "name": "Glob",
+      "input": {
+       "pattern": "**/fetch_sources.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 739,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 739
+     },
+     "output_tokens": 7,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d8db6fab-2901-4840-a63e-260bfb9afc04",
+   "timestamp": "2026-10-10T16:50:29.099Z",
+   "request_id": "req_011CftuDByktPnChjhUBcg7s",
+   "wire_tool_inputs": {
+    "toolu_01THQ8etaucdhSV5jYSh8yby": {
+     "pattern": "**/fetch_sources.py"
+    }
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDCE8mycF94E3StWVi",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01G1rsjdp55uDZmiQtQmgo9C",
+      "name": "Glob",
+      "input": {
+       "pattern": "**/test_*.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 739,
+     "cache_read_input_tokens": 6626,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 739
+     },
+     "output_tokens": 7,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "8a20ad57-64d7-423c-9577-b1c66dedf3d0",
+   "timestamp": "2026-10-10T16:50:29.118Z",
+   "request_id": "req_011CftuDByktPnChjhUBcg7s",
+   "wire_tool_inputs": {
+    "toolu_01G1rsjdp55uDZmiQtQmgo9C": {
+     "pattern": "**/test_*.py"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01THQ8etaucdhSV5jYSh8yby",
+      "type": "tool_result",
+      "content": "fetch_sources.py"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4468cd93-ead0-446b-bda3-282da256e7b5",
+   "timestamp": "2026-10-10T16:50:29.126Z",
+   "tool_use_result": {
+    "filenames": [
+     "fetch_sources.py"
+    ],
+    "durationMs": 8,
+    "numFiles": 1,
+    "truncated": false,
+    "totalMatches": 1,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01THQ8etaucdhSV5jYSh8yby",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01G1rsjdp55uDZmiQtQmgo9C",
+      "type": "tool_result",
+      "content": "tests/test_pjm.py\ntests/test_eia.py\ntests/test_mlperf.py\ntests/test_determinism.py\ntests/test_deng.py\ntests/test_microsoft.py\ntests/test_article_numbers.py"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2ab46fa4-e367-4a3e-be53-01d35942ac4f",
+   "timestamp": "2026-10-10T16:50:29.137Z",
+   "tool_use_result": {
+    "filenames": [
+     "tests/test_pjm.py",
+     "tests/test_eia.py",
+     "tests/test_mlperf.py",
+     "tests/test_determinism.py",
+     "tests/test_deng.py",
+     "tests/test_microsoft.py",
+     "tests/test_article_numbers.py"
+    ],
+    "durationMs": 5,
+    "numFiles": 7,
+    "truncated": false,
+    "totalMatches": 7,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01G1rsjdp55uDZmiQtQmgo9C",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed",
+    "resetsAt": 1791667200,
+    "rateLimitType": "five_hour",
+    "overageStatus": "rejected",
+    "overageDisabledReason": "org_level_disabled",
+    "isUsingOverage": false,
+    "unifiedWindows": {
+     "five_hour": {
+      "utilization": 0.07,
+      "resetsAt": 1791667200
+     },
+     "seven_day": {
+      "utilization": 0.21,
+      "resetsAt": 1791954000
+     },
+     "seven_day_overage_included": {
+      "utilization": 0.14,
+      "resetsAt": 1791954000
+     }
+    }
+   },
+   "uuid": "8e558795-4ffe-4da5-a43e-32a0643dc218",
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDczuWzwo8M4YkpXTd",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01MmrFRqL9YyfpKzRjozejPr",
+      "name": "Read",
+      "input": {
+       "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 347,
+     "cache_read_input_tokens": 7365,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 347
+     },
+     "output_tokens": 17,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f2d7c9f2-162a-4682-a013-42dc66e66baf",
+   "timestamp": "2026-10-10T16:50:34.459Z",
+   "request_id": "req_011CftuDcinoyCDMBDY5K1VB",
+   "wire_tool_inputs": {
+    "toolu_01MmrFRqL9YyfpKzRjozejPr": {
+     "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01MmrFRqL9YyfpKzRjozejPr",
+      "type": "tool_result",
+      "content": "1\t\"\"\"Track 2: re-derive the frozen evidence from the published primary sources.\n2\t\n3\t``run_all.py`` is offline and trusts ``data/``. This script does the opposite:\n4\tit downloads every primary source listed in ``data/SOURCES.json``, reports\n5\tdigest drift, re-parses each document and compares the result against the frozen\n6\tevidence. A green run means the frozen files are still what the publishers say.\n7\t\n8\tNeeds network access, and ``pdftotext`` (Poppler) for the five PDF sources.\n9\tDownloads land in ``sources/``, which is gitignored.\n10\t\"\"\"\n11\t\n12\tfrom __future__ import annotations\n13\t\n14\timport argparse\n15\timport hashlib\n16\timport json\n17\timport pickle\n18\timport shutil\n19\timport ssl\n20\timport subprocess\n21\timport sys\n22\timport urllib.parse\n23\timport urllib.request\n24\tfrom pathlib import Path\n25\tfrom typing import Any\n26\t\n27\tROOT = Path(__file__).resolve().parent\n28\tsys.path.insert(0, str(ROOT / \"code\"))\n29\t\n30\timport parsers  # noqa: E402\n31\t\n32\tDATA = ROOT / \"data\"\n33\tSOURCES = ROOT / \"sources\"\n34\tREGISTRY = json.loads((DATA / \"SOURCES.json\").read_text(encoding=\"utf-8\"))[\"sources\"]\n35\tTIMEOUT = 120\n36\tUSER_AGENT = \"ai-energy-claim-provenance/0.1.0 (+https://ulissesflores.com/energia)\"\n37\t# Some publishers serve an incomplete certificate chain; keep downloads working.\n38\t_TLS = ssl.create_default_context()\n39\t_TLS.check_hostname = False\n40\t_TLS.verify_mode = ssl.CERT_NONE\n41\tCACHE = SOURCES / \"parsed.pkl\"\n42\t\n43\t\n44\tdef by_id(source_id: str) -> dict[str, Any]:\n45\t    \"\"\"Return one registry entry.\n46\t\n47\t    Parameters\n48\t    ----------\n49\t    source_id : str\n50\t        The ``id`` field of the wanted source.\n51\t\n52\t    Returns\n53\t    -------\n54\t    dict\n55\t        The registry entry.\n56\t\n57\t    Raises\n58\t    ------\n59\t    KeyError\n60\t        If no entry carries that id.\n61\t    \"\"\"\n62\t    for entry in REGISTRY:\n63\t        if entry[\"id\"] == source_id:\n64\t            return entry\n65\t    raise KeyError(source_id)\n66\t\n67\t\n68\tdef download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n69\t    \"\"\"Fetch one source into ``sources/`` and digest it.\n70\t\n71\t    Parameters\n72\t    ----------\n73\t    entry : dict\n74\t        Registry entry carrying ``id`` and ``url``.\n75\t    suffix : str\n76\t        File suffix to store it under, for example ``\".pdf\"``.\n77\t\n78\t    Returns\n79\t    -------\n80\t    tuple\n81\t        Path of the stored file and its SHA-256 hex digest.\n82\t    \"\"\"\n83\t    SOURCES.mkdir(exist_ok=True)\n84\t    request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n85\t    with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n86\t        payload = response.read()\n87\t        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n88\t    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n89\t    target.write_bytes(payload)\n90\t    return target, hashlib.sha256(payload).hexdigest()\n91\t\n92\t\n93\tdef pdf_text(path: Path) -> str:\n94\t    \"\"\"Convert a PDF to layout-preserving text.\n95\t\n96\t    Parameters\n97\t    ----------\n98\t    path : pathlib.Path\n99\t        PDF to convert.\n100\t\n101\t    Returns\n102\t    -------\n103\t    str\n104\t        The extracted text.\n105\t\n106\t    Raises\n107\t    ------\n108\t    RuntimeError\n109\t        If ``pdftotext`` is not on PATH, or if the file is not a PDF - a\n110\t        publisher that moved a report typically answers with an HTML page and\n111\t        HTTP 200, which would otherwise surface as an opaque converter crash.\n112\t    \"\"\"\n113\t    if shutil.which(\"pdftotext\") is None:\n114\t        raise RuntimeError(\"pdftotext (Poppler) not found on PATH; PDF sources cannot be re-read\")\n115\t    if not path.read_bytes().lstrip()[:5].startswith(b\"%PDF\"):\n116\t        raise RuntimeError(f\"{path.name} is not a PDF; the publisher likely moved the document\")\n117\t    done = subprocess.run(\n118\t        f\"pdftotext -layout '{path}' -\", shell=True, capture_output=True, text=True, check=True\n119\t    )\n120\t    return done.stdout\n121\t\n122\t\n123\tdef report(name: str, ok: bool, detail: str) -> bool:\n124\t    \"\"\"Print one check line and pass its verdict through.\n125\t\n126\t    Parameters\n127\t    ----------\n128\t    name : str\n129\t        Check name.\n130\t    ok : bool\n131\t        Whether the check passed.\n132\t    detail : str\n133\t        Short explanation printed after the verdict.\n134\t\n135\t    Returns\n136\t    -------\n137\t    bool\n138\t        The ``ok`` argument, unchanged.\n139\t    \"\"\"\n140\t    print(f\"[{'OK  ' if ok else 'FAIL'}] {name}: {detail}\")\n141\t    return ok\n142\t\n143\t\n144\tdef digest_note(entry: dict[str, Any], digest: str) -> str:\n145\t    \"\"\"Describe how a fresh digest compares with the recorded one.\n146\t\n147\t    Parameters\n148\t    ----------\n149\t    entry : dict\n150\t        Registry entry.\n151\t    digest : str\n152\t        Freshly computed digest.\n153\t\n154\t    Returns\n155\t    -------\n156\t    str\n157\t        Human-readable comparison.\n158\t    \"\"\"\n159\t    recorded = entry.get(\"sha256\")\n160\t    if recorded is None:\n161\t        return \"no recorded digest (live endpoint)\"\n162\t    if recorded[:12] == digest[:12]:\n163\t        return f\"digest matches {recorded[:12]}...\"\n164\t    if entry.get(\"drift_expected\"):\n165\t        return f\"digest drifted as expected ({recorded[:12]}... -> {digest[:12]}...)\"\n166\t    return (\n167\t        f\"digest DRIFTED ({recorded[:12]}... -> {digest[:12]}...); the publisher changed the file\"\n168\t    )\n169\t\n170\t\n171\tdef check_mlperf() -> bool:\n172\t    \"\"\"Re-derive the MLPerf rows from the three live ledgers.\n173\t\n174\t    Returns\n175\t    -------\n176\t    bool\n177\t        Whether the re-derived rows match the frozen evidence.\n178\t    \"\"\"\n179\t    frozen = json.loads((DATA / \"mlperf_submissions.json\").read_text(encoding=\"utf-8\"))\n180\t    rebuilt: list[dict[str, Any]] = []\n181\t    for round_name in (\"v5.0\", \"v5.1\", \"v6.0\"):\n182\t        entry = by_id(f\"mlperf-{round_name}\")\n183\t        path, digest = download(entry, \".json\")\n184\t        print(f\"       mlperf {round_name}: {digest_note(entry, digest)}\")\n185\t        rebuilt += parsers.parse_mlperf_ledger(path.read_bytes(), round_name)\n186\t    key = lambda row: (row[\"round\"], row[\"id\"])  # noqa: E731\n187\t    same = sorted(rebuilt, key=key) == sorted(frozen, key=key)\n188\t    return report(\"mlperf_submissions.json\", same, f\"{len(rebuilt)} rows re-derived\")\n189\t\n190\t\n191\tdef check_mlperf_systems() -> bool:\n192\t    \"\"\"Re-list the NVIDIA system directories and check the ``_MaxQ`` pattern.\n193\t\n194\t    Returns\n195\t    -------\n196\t    bool\n197\t        Whether the listings still match the frozen ones.\n198\t    \"\"\"\n199\t    frozen = json.loads((DATA / \"mlperf_nvidia_systems.json\").read_text(encoding=\"utf-8\"))\n200\t    template = frozen[\"api_url_template\"]\n201\t    ok = True\n202\t    for round_name, names in frozen[\"systems\"].items():\n203\t        request = urllib.request.Request(\n204\t            template.format(round=round_name), headers={\"User-Agent\": USER_AGENT}\n205\t        )\n206\t        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:\n207\t            live = sorted(item[\"name\"] for item in json.load(response))\n208\t        ok &= report(f\"NVIDIA systems {round_name}\", live == names, f\"{len(live)} directories\")\n209\t    return ok\n210\t\n211\t\n212\tdef check_deng() -> bool:\n213\t    \"\"\"Re-parse Table 5 of the paper and check the cited rows and ranks.\n214\t\n215\t    Returns\n216\t    -------\n217\t    bool\n218\t        Whether every cited row and rank is reproduced.\n219\t    \"\"\"\n220\t    frozen = json.loads((DATA / \"deng_languages.json\").read_text(encoding=\"utf-8\"))\n221\t    entry = by_id(\"deng-language-energy-divide\")\n222\t    path, digest = download(entry, \".pdf\")\n223\t    print(f\"       deng: {digest_note(entry, digest)}\")\n224\t    rows = parsers.parse_deng_table5(pdf_text(path))\n225\t    if not report(\n226\t        \"Deng Table 5 size\", len(rows) == frozen[\"n_languages\"], f\"{len(rows)} languages\"\n227\t    ):\n228\t        return False\n229\t    ranks = {\n230\t        row[\"code\"]: i for i, row in enumerate(sorted(rows, key=lambda r: r[\"total_energy_j\"]), 1)\n231\t    }\n232\t    parsed = {row[\"code\"]: row for row in rows}\n233\t    ok = True\n234\t    for cited in frozen[\"table_5_cited_rows\"]:\n235\t        code = cited[\"code\"]\n236\t        live = parsed[code]\n237\t        matches = (\n238\t            live[\"total_energy_j\"] == cited[\"total_energy_j\"]\n239\t            and live[\"accuracy_pct\"] == cited[\"accuracy_pct\"]\n240\t            and ranks[code] == cited[\"rank_by_total_energy\"]\n241\t        )\n242\t        ok &= report(f\"Deng {code}\", matches, f\"rank {ranks[code]} of {len(rows)}\")\n243\t    return ok\n244\t\n245\t\n246\tdef check_microsoft() -> bool:\n247\t    \"\"\"Re-parse Table 15 of the Fact Sheet and compare it with the frozen rows.\n248\t\n249\t    Returns\n250\t    -------\n251\t    bool\n252\t        Whether the 29 locations and their values are reproduced.\n253\t    \"\"\"\n254\t    frozen = json.loads((DATA / \"microsoft_fy25.json\").read_text(encoding=\"utf-8\"))\n255\t    entry = by_id(\"microsoft-fact-sheet\")\n256\t    path, digest = download(entry, \".pdf\")\n257\t    print(f\"       microsoft: {digest_note(entry, digest)}\")\n258\t    if CACHE.exists():\n259\t        rows = pickle.loads(CACHE.read_bytes())\n260\t    else:\n261\t        rows = parsers.parse_microsoft_table15(pdf_text(path))\n262\t        CACHE.write_bytes(pickle.dumps(rows))\n263\t    live = {row[\"location\"]: row[\"electricity_mwh\"] for row in rows}\n264\t    want = {row[\"location\"]: row[\"electricity_mwh\"] for row in frozen[\"table_15_locations\"]}\n265\t    return report(\"Microsoft Table 15\", live == want, f\"{len(live)} locations re-derived\")\n266\t\n267\t\n268\tdef check_pjm() -> bool:\n269\t    \"\"\"Re-extract the clearing prices from the four BRA reports.\n270\t\n271\t    Returns\n272\t    -------\n273\t    bool\n274\t        Whether all five published prices are reproduced.\n275\t    \"\"\"\n276\t    frozen = json.loads((DATA / \"pjm_auctions.json\").read_text(encoding=\"utf-8\"))[\"auctions\"]\n277\t    want = {row[\"delivery_year\"]: row[\"price_usd_mw_day\"] for row in frozen}\n278\t    live: dict[str, float] = {}\n279\t    for entry in (e for e in REGISTRY if e[\"id\"].startswith(\"pjm-bra-\")):\n280\t        path, digest = download(entry, \".pdf\")\n281\t        print(f\"       {entry['id']}: {digest_note(entry, digest)}\")\n282\t        for year, price in parsers.parse_pjm_prices(pdf_text(path)).items():\n283\t            if year in live and live[year] != price:\n284\t                return report(\"PJM prices\", False, f\"{year} disagrees across reports\")\n285\t            live[year] = price\n286\t    missing = {year: price for year, price in want.items() if live.get(year) != price}\n287\t    return report(\"PJM prices\", not missing, f\"{len(want)} prices re-derived from 4 reports\")\n288\t\n289\t\n290\tdef check_eia() -> bool:\n291\t    \"\"\"Re-fetch the EIA series and check that every frozen month survives.\n292\t\n293\t    Returns\n294\t    -------\n295\t    bool\n296\t        Whether the live series still contains every frozen month, unchanged.\n297\t    \"\"\"\n298\t    frozen = json.loads((DATA / \"eia_retail_price_residential_us.json\").read_text(encoding=\"utf-8\"))\n299\t    entry = by_id(\"eia-residential-price\")\n300\t    path, digest = download(entry, \".json\")\n301\t    print(f\"       eia: {digest_note(entry, digest)}\")\n302\t    live = {\n303\t        row[\"period\"]: row[\"price\"]\n304\t        for row in json.loads(path.read_text(encoding=\"utf-8\"))[\"response\"][\"data\"]\n305\t    }\n306\t    was = {row[\"period\"]: row[\"price\"] for row in frozen[\"response\"][\"data\"]}\n307\t    revised = {k: (v, live.get(k)) for k, v in was.items() if live.get(k) != v}\n308\t    return report(\n309\t        \"EIA monthly series\",\n310\t        not revised,\n311\t        f\"{len(was)} frozen months still present in {len(live)} live months\",\n312\t    )\n313\t\n314\t\n315\tCHECKS = (\n316\t    (\"MLPerf ledgers\", check_mlperf),\n317\t    (\"MLPerf NVIDIA systems\", check_mlperf_systems),\n318\t    (\"Deng Table 5\", check_deng),\n319\t    (\"Microsoft Table 15\", check_microsoft),\n320\t    (\"PJM auctions\", check_pjm),\n321\t    (\"EIA prices\", check_eia),\n322\t)\n323\t\n324\t\n325\tdef main() -> int:\n326\t    \"\"\"Run every Track 2 check and report the verdict.\n327\t\n328\t    Returns\n329\t    -------\n330\t    int\n331\t        ``0`` if every check passed, ``1`` otherwise.\n332\t    \"\"\"\n333\t    parser = argparse.ArgumentParser(description=__doc__)\n334\t    parser.add_argument(\n335\t        \"--keep\",\n336\t        action=\"store_true\",\n337\t        help=\"leave the downloaded sources in sources/ instead of deleting them\",\n338\t    )\n339\t    args = parser.parse_args()\n340\t\n341\t    failures = []\n342\t    try:\n343\t        for name, check in CHECKS:\n344\t            print(f\"--- {name}\")\n345\t            if not check():\n346\t                failures.append(name)\n347\t    finally:\n348\t        if not args.keep and SOURCES.exists():\n349\t            shutil.rmtree(SOURCES)\n350\t\n351\t    if failures:\n352\t        print(f\"\\nTrack 2 FAILED for: {', '.join(failures)}\")\n353\t        return 1\n354\t    print(\"\\nTrack 2 complete: every frozen figure re-derived from its primary source.\")\n355\t    return 0\n356\t\n357\t\n358\tif __name__ == \"__main__\":\n359\t    sys.exit(main())\n360\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "8094cdcc-34fe-48ba-9e91-f7145cac661d",
+   "timestamp": "2026-10-10T16:50:34.484Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py",
+     "content": "\"\"\"Track 2: re-derive the frozen evidence from the published primary sources.\n\n``run_all.py`` is offline and trusts ``data/``. This script does the opposite:\nit downloads every primary source listed in ``data/SOURCES.json``, reports\ndigest drift, re-parses each document and compares the result against the frozen\nevidence. A green run means the frozen files are still what the publishers say.\n\nNeeds network access, and ``pdftotext`` (Poppler) for the five PDF sources.\nDownloads land in ``sources/``, which is gitignored.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport hashlib\nimport json\nimport pickle\nimport shutil\nimport ssl\nimport subprocess\nimport sys\nimport urllib.parse\nimport urllib.request\nfrom pathlib import Path\nfrom typing import Any\n\nROOT = Path(__file__).resolve().parent\nsys.path.insert(0, str(ROOT / \"code\"))\n\nimport parsers  # noqa: E402\n\nDATA = ROOT / \"data\"\nSOURCES = ROOT / \"sources\"\nREGISTRY = json.loads((DATA / \"SOURCES.json\").read_text(encoding=\"utf-8\"))[\"sources\"]\nTIMEOUT = 120\nUSER_AGENT = \"ai-energy-claim-provenance/0.1.0 (+https://ulissesflores.com/energia)\"\n# Some publishers serve an incomplete certificate chain; keep downloads working.\n_TLS = ssl.create_default_context()\n_TLS.check_hostname = False\n_TLS.verify_mode = ssl.CERT_NONE\nCACHE = SOURCES / \"parsed.pkl\"\n\n\ndef by_id(source_id: str) -> dict[str, Any]:\n    \"\"\"Return one registry entry.\n\n    Parameters\n    ----------\n    source_id : str\n        The ``id`` field of the wanted source.\n\n    Returns\n    -------\n    dict\n        The registry entry.\n\n    Raises\n    ------\n    KeyError\n        If no entry carries that id.\n    \"\"\"\n    for entry in REGISTRY:\n        if entry[\"id\"] == source_id:\n            return entry\n    raise KeyError(source_id)\n\n\ndef download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n    \"\"\"Fetch one source into ``sources/`` and digest it.\n\n    Parameters\n    ----------\n    entry : dict\n        Registry entry carrying ``id`` and ``url``.\n    suffix : str\n        File suffix to store it under, for example ``\".pdf\"``.\n\n    Returns\n    -------\n    tuple\n        Path of the stored file and its SHA-256 hex digest.\n    \"\"\"\n    SOURCES.mkdir(exist_ok=True)\n    request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n    with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n        payload = response.read()\n        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n    target.write_bytes(payload)\n    return target, hashlib.sha256(payload).hexdigest()\n\n\ndef pdf_text(path: Path) -> str:\n    \"\"\"Convert a PDF to layout-preserving text.\n\n    Parameters\n    ----------\n    path : pathlib.Path\n        PDF to convert.\n\n    Returns\n    -------\n    str\n        The extracted text.\n\n    Raises\n    ------\n    RuntimeError\n        If ``pdftotext`` is not on PATH, or if the file is not a PDF - a\n        publisher that moved a report typically answers with an HTML page and\n        HTTP 200, which would otherwise surface as an opaque converter crash.\n    \"\"\"\n    if shutil.which(\"pdftotext\") is None:\n        raise RuntimeError(\"pdftotext (Poppler) not found on PATH; PDF sources cannot be re-read\")\n    if not path.read_bytes().lstrip()[:5].startswith(b\"%PDF\"):\n        raise RuntimeError(f\"{path.name} is not a PDF; the publisher likely moved the document\")\n    done = subprocess.run(\n        f\"pdftotext -layout '{path}' -\", shell=True, capture_output=True, text=True, check=True\n    )\n    return done.stdout\n\n\ndef report(name: str, ok: bool, detail: str) -> bool:\n    \"\"\"Print one check line and pass its verdict through.\n\n    Parameters\n    ----------\n    name : str\n        Check name.\n    ok : bool\n        Whether the check passed.\n    detail : str\n        Short explanation printed after the verdict.\n\n    Returns\n    -------\n    bool\n        The ``ok`` argument, unchanged.\n    \"\"\"\n    print(f\"[{'OK  ' if ok else 'FAIL'}] {name}: {detail}\")\n    return ok\n\n\ndef digest_note(entry: dict[str, Any], digest: str) -> str:\n    \"\"\"Describe how a fresh digest compares with the recorded one.\n\n    Parameters\n    ----------\n    entry : dict\n        Registry entry.\n    digest : str\n        Freshly computed digest.\n\n    Returns\n    -------\n    str\n        Human-readable comparison.\n    \"\"\"\n    recorded = entry.get(\"sha256\")\n    if recorded is None:\n        return \"no recorded digest (live endpoint)\"\n    if recorded[:12] == digest[:12]:\n        return f\"digest matches {recorded[:12]}...\"\n    if entry.get(\"drift_expected\"):\n        return f\"digest drifted as expected ({recorded[:12]}... -> {digest[:12]}...)\"\n    return (\n        f\"digest DRIFTED ({recorded[:12]}... -> {digest[:12]}...); the publisher changed the file\"\n    )\n\n\ndef check_mlperf() -> bool:\n    \"\"\"Re-derive the MLPerf rows from the three live ledgers.\n\n    Returns\n    -------\n    bool\n        Whether the re-derived rows match the frozen evidence.\n    \"\"\"\n    frozen = json.loads((DATA / \"mlperf_submissions.json\").read_text(encoding=\"utf-8\"))\n    rebuilt: list[dict[str, Any]] = []\n    for round_name in (\"v5.0\", \"v5.1\", \"v6.0\"):\n        entry = by_id(f\"mlperf-{round_name}\")\n        path, digest = download(entry, \".json\")\n        print(f\"       mlperf {round_name}: {digest_note(entry, digest)}\")\n        rebuilt += parsers.parse_mlperf_ledger(path.read_bytes(), round_name)\n    key = lambda row: (row[\"round\"], row[\"id\"])  # noqa: E731\n    same = sorted(rebuilt, key=key) == sorted(frozen, key=key)\n    return report(\"mlperf_submissions.json\", same, f\"{len(rebuilt)} rows re-derived\")\n\n\ndef check_mlperf_systems() -> bool:\n    \"\"\"Re-list the NVIDIA system directories and check the ``_MaxQ`` pattern.\n\n    Returns\n    -------\n    bool\n        Whether the listings still match the frozen ones.\n    \"\"\"\n    frozen = json.loads((DATA / \"mlperf_nvidia_systems.json\").read_text(encoding=\"utf-8\"))\n    template = frozen[\"api_url_template\"]\n    ok = True\n    for round_name, names in frozen[\"systems\"].items():\n        request = urllib.request.Request(\n            template.format(round=round_name), headers={\"User-Agent\": USER_AGENT}\n        )\n        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:\n            live = sorted(item[\"name\"] for item in json.load(response))\n        ok &= report(f\"NVIDIA systems {round_name}\", live == names, f\"{len(live)} directories\")\n    return ok\n\n\ndef check_deng() -> bool:\n    \"\"\"Re-parse Table 5 of the paper and check the cited rows and ranks.\n\n    Returns\n    -------\n    bool\n        Whether every cited row and rank is reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"deng_languages.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"deng-language-energy-divide\")\n    path, digest = download(entry, \".pdf\")\n    print(f\"       deng: {digest_note(entry, digest)}\")\n    rows = parsers.parse_deng_table5(pdf_text(path))\n    if not report(\n        \"Deng Table 5 size\", len(rows) == frozen[\"n_languages\"], f\"{len(rows)} languages\"\n    ):\n        return False\n    ranks = {\n        row[\"code\"]: i for i, row in enumerate(sorted(rows, key=lambda r: r[\"total_energy_j\"]), 1)\n    }\n    parsed = {row[\"code\"]: row for row in rows}\n    ok = True\n    for cited in frozen[\"table_5_cited_rows\"]:\n        code = cited[\"code\"]\n        live = parsed[code]\n        matches = (\n            live[\"total_energy_j\"] == cited[\"total_energy_j\"]\n            and live[\"accuracy_pct\"] == cited[\"accuracy_pct\"]\n            and ranks[code] == cited[\"rank_by_total_energy\"]\n        )\n        ok &= report(f\"Deng {code}\", matches, f\"rank {ranks[code]} of {len(rows)}\")\n    return ok\n\n\ndef check_microsoft() -> bool:\n    \"\"\"Re-parse Table 15 of the Fact Sheet and compare it with the frozen rows.\n\n    Returns\n    -------\n    bool\n        Whether the 29 locations and their values are reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"microsoft_fy25.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"microsoft-fact-sheet\")\n    path, digest = download(entry, \".pdf\")\n    print(f\"       microsoft: {digest_note(entry, digest)}\")\n    if CACHE.exists():\n        rows = pickle.loads(CACHE.read_bytes())\n    else:\n        rows = parsers.parse_microsoft_table15(pdf_text(path))\n        CACHE.write_bytes(pickle.dumps(rows))\n    live = {row[\"location\"]: row[\"electricity_mwh\"] for row in rows}\n    want = {row[\"location\"]: row[\"electricity_mwh\"] for row in frozen[\"table_15_locations\"]}\n    return report(\"Microsoft Table 15\", live == want, f\"{len(live)} locations re-derived\")\n\n\ndef check_pjm() -> bool:\n    \"\"\"Re-extract the clearing prices from the four BRA reports.\n\n    Returns\n    -------\n    bool\n        Whether all five published prices are reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"pjm_auctions.json\").read_text(encoding=\"utf-8\"))[\"auctions\"]\n    want = {row[\"delivery_year\"]: row[\"price_usd_mw_day\"] for row in frozen}\n    live: dict[str, float] = {}\n    for entry in (e for e in REGISTRY if e[\"id\"].startswith(\"pjm-bra-\")):\n        path, digest = download(entry, \".pdf\")\n        print(f\"       {entry['id']}: {digest_note(entry, digest)}\")\n        for year, price in parsers.parse_pjm_prices(pdf_text(path)).items():\n            if year in live and live[year] != price:\n                return report(\"PJM prices\", False, f\"{year} disagrees across reports\")\n            live[year] = price\n    missing = {year: price for year, price in want.items() if live.get(year) != price}\n    return report(\"PJM prices\", not missing, f\"{len(want)} prices re-derived from 4 reports\")\n\n\ndef check_eia() -> bool:\n    \"\"\"Re-fetch the EIA series and check that every frozen month survives.\n\n    Returns\n    -------\n    bool\n        Whether the live series still contains every frozen month, unchanged.\n    \"\"\"\n    frozen = json.loads((DATA / \"eia_retail_price_residential_us.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"eia-residential-price\")\n    path, digest = download(entry, \".json\")\n    print(f\"       eia: {digest_note(entry, digest)}\")\n    live = {\n        row[\"period\"]: row[\"price\"]\n        for row in json.loads(path.read_text(encoding=\"utf-8\"))[\"response\"][\"data\"]\n    }\n    was = {row[\"period\"]: row[\"price\"] for row in frozen[\"response\"][\"data\"]}\n    revised = {k: (v, live.get(k)) for k, v in was.items() if live.get(k) != v}\n    return report(\n        \"EIA monthly series\",\n        not revised,\n        f\"{len(was)} frozen months still present in {len(live)} live months\",\n    )\n\n\nCHECKS = (\n    (\"MLPerf ledgers\", check_mlperf),\n    (\"MLPerf NVIDIA systems\", check_mlperf_systems),\n    (\"Deng Table 5\", check_deng),\n    (\"Microsoft Table 15\", check_microsoft),\n    (\"PJM auctions\", check_pjm),\n    (\"EIA prices\", check_eia),\n)\n\n\ndef main() -> int:\n    \"\"\"Run every Track 2 check and report the verdict.\n\n    Returns\n    -------\n    int\n        ``0`` if every check passed, ``1`` otherwise.\n    \"\"\"\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\n        \"--keep\",\n        action=\"store_true\",\n        help=\"leave the downloaded sources in sources/ instead of deleting them\",\n    )\n    args = parser.parse_args()\n\n    failures = []\n    try:\n        for name, check in CHECKS:\n            print(f\"--- {name}\")\n            if not check():\n                failures.append(name)\n    finally:\n        if not args.keep and SOURCES.exists():\n            shutil.rmtree(SOURCES)\n\n    if failures:\n        print(f\"\\nTrack 2 FAILED for: {', '.join(failures)}\")\n        return 1\n    print(\"\\nTrack 2 complete: every frozen figure re-derived from its primary source.\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+     "numLines": 360,
+     "startLine": 1,
+     "totalLines": 360
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01MmrFRqL9YyfpKzRjozejPr",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDczuWzwo8M4YkpXTd",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_013ZBJtPXWt9DUJrqQ8g2Jak",
+      "name": "Read",
+      "input": {
+       "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/tests/test_determinism.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 347,
+     "cache_read_input_tokens": 7365,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 347
+     },
+     "output_tokens": 17,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d80a6ad7-102d-44b7-9451-37a08aec48ac",
+   "timestamp": "2026-10-10T16:50:35.136Z",
+   "request_id": "req_011CftuDcinoyCDMBDY5K1VB",
+   "wire_tool_inputs": {
+    "toolu_013ZBJtPXWt9DUJrqQ8g2Jak": {
+     "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/tests/test_determinism.py"
+    }
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuDczuWzwo8M4YkpXTd",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_018JrTRDp1dCsdt85M5kRrNr",
+      "name": "Glob",
+      "input": {
+       "pattern": "tests/conftest.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 347,
+     "cache_read_input_tokens": 7365,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 347
+     },
+     "output_tokens": 17,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e332b126-c322-4618-bacc-0fdf0ca5e278",
+   "timestamp": "2026-10-10T16:50:35.142Z",
+   "request_id": "req_011CftuDcinoyCDMBDY5K1VB",
+   "wire_tool_inputs": {
+    "toolu_018JrTRDp1dCsdt85M5kRrNr": {
+     "pattern": "tests/conftest.py"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_013ZBJtPXWt9DUJrqQ8g2Jak",
+      "type": "tool_result",
+      "content": "1\t\"\"\"Determinism: the same frozen evidence must always produce the same results.\"\"\"\n2\t\n3\tfrom __future__ import annotations\n4\t\n5\timport json\n6\tfrom pathlib import Path\n7\t\n8\tfrom results import build\n9\t\n10\tRESULTS_FILE = Path(__file__).resolve().parent.parent / \"output\" / \"results.json\"\n11\t\n12\t\n13\tdef test_two_runs_agree() -> None:\n14\t    \"\"\"Nothing in the derivation depends on time, randomness or dict order.\"\"\"\n15\t    first = json.dumps(build(), sort_keys=True)\n16\t    second = json.dumps(build(), sort_keys=True)\n17\t    assert first == second\n18\t\n19\t\n20\tdef test_the_committed_results_match_a_fresh_run() -> None:\n21\t    \"\"\"``output/results.json`` cannot drift away from the code that built it.\"\"\"\n22\t    committed = json.loads(RESULTS_FILE.read_text(encoding=\"utf-8\"))\n23\t    assert committed == json.loads(json.dumps(build()))\n24\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "b6871c0a-6932-4be7-b3d5-a0caec186d11",
+   "timestamp": "2026-10-10T16:50:35.159Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/tests/test_determinism.py",
+     "content": "\"\"\"Determinism: the same frozen evidence must always produce the same results.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nfrom pathlib import Path\n\nfrom results import build\n\nRESULTS_FILE = Path(__file__).resolve().parent.parent / \"output\" / \"results.json\"\n\n\ndef test_two_runs_agree() -> None:\n    \"\"\"Nothing in the derivation depends on time, randomness or dict order.\"\"\"\n    first = json.dumps(build(), sort_keys=True)\n    second = json.dumps(build(), sort_keys=True)\n    assert first == second\n\n\ndef test_the_committed_results_match_a_fresh_run() -> None:\n    \"\"\"``output/results.json`` cannot drift away from the code that built it.\"\"\"\n    committed = json.loads(RESULTS_FILE.read_text(encoding=\"utf-8\"))\n    assert committed == json.loads(json.dumps(build()))\n",
+     "numLines": 24,
+     "startLine": 1,
+     "totalLines": 24
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_013ZBJtPXWt9DUJrqQ8g2Jak",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_018JrTRDp1dCsdt85M5kRrNr",
+      "type": "tool_result",
+      "content": "No files found"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "af82430e-308d-48f0-9692-70b35856c7b7",
+   "timestamp": "2026-10-10T16:50:35.165Z",
+   "tool_use_result": {
+    "filenames": [],
+    "durationMs": 6,
+    "numFiles": 0,
+    "truncated": false,
+    "totalMatches": 0,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_018JrTRDp1dCsdt85M5kRrNr",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 50,
+   "estimated_tokens_delta": 50,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2b816a4a-3999-4970-9644-2884ee4b9c33"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 100,
+   "estimated_tokens_delta": 50,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2fb9ea55-3b6f-47f5-b00b-891c99acc7c3"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 250,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "7b36778b-a9f7-46c5-888c-3f476364de35"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 350,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d027b6a6-9400-4d42-9a80-0ab7bd75a411"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 450,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4dcf813c-90be-4b72-9ad1-8f19205fd603"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 600,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "953b19af-6cb8-4a47-b723-6549d0ecfdce"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 700,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "52263ade-c78e-4dc2-8b09-56c983390e29"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 850,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "ede56eb1-7d54-42c1-adaa-5391b8526cb8"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 950,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "21d4d1db-02a0-421a-915f-87a0752a395c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1050,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "0340e26a-7b2e-4e1a-ab6b-1d457b722211"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1150,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "a68a6b4e-853f-43dc-ae6d-9ede566cb675"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuE4TMbnuvRzg62mfj6",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "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"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 6238,
+     "cache_read_input_tokens": 7712,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 6238
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "58578e04-b2be-48c8-8cc1-ff402f6c545f",
+   "timestamp": "2026-10-10T16:51:02.439Z",
+   "request_id": "req_011CftuE4BE3u3AYAfcN9DVv",
+   "thinking_duration_ms": 24838,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3,
+   "estimated_tokens_delta": 3,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "63e305d6-e7d5-4ada-82e6-72746e9205d9"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4,
+   "estimated_tokens_delta": 1,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d71db75e-5cc1-471b-a3a8-e959da749daa"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 8,
+   "estimated_tokens_delta": 4,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "57563486-68f2-4ef6-956e-9de6a6112051"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 9,
+   "estimated_tokens_delta": 1,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e1c94550-12d1-4173-80c7-6ebbf7e12d03"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 11,
+   "estimated_tokens_delta": 2,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e1d1f70b-cdad-4dd0-b6fc-7b05ac076630"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 16,
+   "estimated_tokens_delta": 5,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "1585a4cb-613e-437f-8fcf-66fd0305a49a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 21,
+   "estimated_tokens_delta": 5,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "83fe8d88-a7fb-4cde-ac49-7e1b99b6757c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 23,
+   "estimated_tokens_delta": 2,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "0234e7a6-b8fc-499a-84ce-234c4543cc6c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 26,
+   "estimated_tokens_delta": 3,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "aa99a39e-2de7-4f84-8364-50acfd6f24b5"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 32,
+   "estimated_tokens_delta": 6,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2e55d758-0e54-41e7-a058-bb4652f94b98"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 34,
+   "estimated_tokens_delta": 2,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "8581639b-88d2-44e3-af10-c45d532a40e0"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 37,
+   "estimated_tokens_delta": 3,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "999d201e-91a2-4acf-98fd-d1d3c0261e0c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 39,
+   "estimated_tokens_delta": 2,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f7d1deb2-fa51-4d85-bb59-dcdd62e3fb55"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 44,
+   "estimated_tokens_delta": 5,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d40c450d-a6bc-4334-8017-85a2f7c13a57"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 49,
+   "estimated_tokens_delta": 5,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "59760987-614b-4ec7-b029-97b74a341199"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 52,
+   "estimated_tokens_delta": 3,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "a8e9855b-4b4d-4819-8a95-56fd31ba1f06"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 57,
+   "estimated_tokens_delta": 5,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "434a782c-b368-4d5a-a104-ed1cb8e2af75"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 61,
+   "estimated_tokens_delta": 4,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e3eee81c-b737-448d-8bdf-0eb85eca2472"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 64,
+   "estimated_tokens_delta": 3,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "90ead59c-8cbe-478e-bc38-f84d8f5d04c6"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 71,
+   "estimated_tokens_delta": 7,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "a62c147f-ec0f-4343-a36f-6fb33e0613ed"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 76,
+   "estimated_tokens_delta": 5,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "8a619cea-817f-4e27-926f-a46000f27cd7"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 78,
+   "estimated_tokens_delta": 2,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "9f9e4196-f77b-43a1-b10f-259991de541a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 79,
+   "estimated_tokens_delta": 1,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "bdae390e-a3ae-40c8-b1cd-dae16b3cbe94"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 250,
+   "estimated_tokens_delta": 171,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f486dc47-c9c0-4956-94e5-633bf0d35f7c"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuE4TMbnuvRzg62mfj6",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "Confirmei a vulnerabilidade: `download` usa `name` direto do `Content-Disposition` sem sanitizar, permitindo que um servidor malicioso grave arquivos fora de `sources/` via path traversal ou caminho absoluto. Agora vou checar a configuração do pytest para importar o módulo corretamente.\n\n",
+      "signature": "CAQS3gcKEQgSGAI4AUIJbmFycmF0aW9uEgyxJ5XP1RDR4UYLHjYaDGywrmU5yK5ttOiF6yIw4go+Z4gGZazU8mY0xaFf81lq4SMsHzvnL3xN1Fi4pVLBCdTy5HabHqGEUEJ5uiBWKvoGQDzpxc3Dz6CeYQJP8cIpZqkXVWqhCc1kYaQWXRpgav+LrFadY0N3JOAVSQDLLwnJ7os7blaZjD9JwYIUA4tyBgLOL3Hku0rHPhZsDWIqlm7kJ/XvHEarGyiUT0MlAjT4tu8ajhtAiAiXxbDbEmJ8q23i9Jej9OpzBKys7HARzfzEXiF5kVzH1wV/uHqVbZc2gq8kSfEK45n3wzbhcykpK/aX2IOvGd1zpZWSI3eBEmqSMAgYQAXkke6Z1f+mHWPLnDbzCND9RG5HgOTlpB2Td5Q5ejO89ugEziv3rd+fw1FC2v0f+uhRil/P3zeEaAia8x6UnkrISbFWXFU7JTG0X4d7iQngwj1oneEa2VgC7uJNXW4haxA+eNBH4DRu9CaaUgjXbmK0xcaJqOdQLkaNXYXCMx+mq537MgHJ3dqm8rVpnWw10L/HWZz84PCz5q11X2ShRF7/sWTzMX0Qwlgf8AbmYayxnk8OLEYfipa4lMvIOjaaAzURbgP+kXZVWfzkB4rrXTgDjYu773TPi+hw9GNXaTEBpTt0vwN8n7OTO6PonEvMeC3KMKWZoUJrvba0R6gIewKRNxpk3q/LGC7yASbe+yrCI7uNv82GClL8WfnFSoDBhpQGd5u6pxVWuZh4DD0Ua5iqUYtcK5C1LJiNH8i94f7Kz2ZIPgBQOJAan3ZNIQsl2QmqQCIbzTm7btaeVECIe0B2UyLzXPCrwtFsZN7xNLK2X12y2Fs5t5U2QfUOeZAyevvl/1+Uy9Qblf9GKRHHcYDmIk/9dpdOFh/1CYiFdhATCstL9so8P++fWwk6+GYsKbCQPV8eGBBs2Es4F7uAfyHvBXkn73cYhHu1NbzEGlOREuKuBNgZ/4ZW957RJuwQjheJKmr0ITxBhIG431PhDAh8t8ngv+F+ti/HdRG+TS/RzmI3EhXgCblT79KeI582OBbMQJxa6YKMVy4ZJltYYZkB61UmYxCAm0dtlkw3+xzO5xHX6IDUzIRrL6oSryxc9AL4es/mO6loN9yWSJiBAdPVJ+j0rxyCBcPM3+rGqImpd9Ruvqf3xXWAGYSOoLXEnggIazniIC7JQATrfkhmZpgKahc56vngYezsk3r7iWZ5nMH92tY1v/k3TDEDTDrl8xV1aLDw4rHUgqv8dO9fOJjkA5zqDsY9tq6SfvFSQ9rzg8/ABW0YAQ=="
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 6238,
+     "cache_read_input_tokens": 7712,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 6238
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "b32593a2-3acc-4810-ba26-27d0c4816d57",
+   "timestamp": "2026-10-10T16:51:02.442Z",
+   "request_id": "req_011CftuE4BE3u3AYAfcN9DVv",
+   "narration_block_indexes": [
+    0
+   ],
+   "thinking_duration_ms": 1,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuE4TMbnuvRzg62mfj6",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_017hsnXDT5aCWGDUy5BKwLH1",
+      "name": "Glob",
+      "input": {
+       "pattern": "{pyproject.toml,pytest.ini,setup.cfg,conftest.py,tox.ini}"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 6238,
+     "cache_read_input_tokens": 7712,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 6238
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2071e3c8-6828-451c-8f6c-908c73bca9bd",
+   "timestamp": "2026-10-10T16:51:02.443Z",
+   "request_id": "req_011CftuE4BE3u3AYAfcN9DVv",
+   "wire_tool_inputs": {
+    "toolu_017hsnXDT5aCWGDUy5BKwLH1": {
+     "pattern": "{pyproject.toml,pytest.ini,setup.cfg,conftest.py,tox.ini}"
+    }
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuE4TMbnuvRzg62mfj6",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01Y6VNn4AAkVo6p9BSnogwJh",
+      "name": "Grep",
+      "input": {
+       "pattern": "pythonpath|testpaths|sys\\.path",
+       "glob": "*.{toml,ini,cfg,py}",
+       "output_mode": "content"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 6238,
+     "cache_read_input_tokens": 7712,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 6238
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "0389b4f6-04be-4ffb-91d2-f6b5b954ed11",
+   "timestamp": "2026-10-10T16:51:02.448Z",
+   "request_id": "req_011CftuE4BE3u3AYAfcN9DVv",
+   "wire_tool_inputs": {
+    "toolu_01Y6VNn4AAkVo6p9BSnogwJh": {
+     "pattern": "pythonpath|testpaths|sys\\.path",
+     "glob": "*.{toml,ini,cfg,py}",
+     "output_mode": "content"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_017hsnXDT5aCWGDUy5BKwLH1",
+      "type": "tool_result",
+      "content": "conftest.py\npyproject.toml"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "a9433a00-30de-4fa3-a2da-bd788a34767f",
+   "timestamp": "2026-10-10T16:51:02.474Z",
+   "tool_use_result": {
+    "filenames": [
+     "conftest.py",
+     "pyproject.toml"
+    ],
+    "durationMs": 10,
+    "numFiles": 2,
+    "truncated": false,
+    "totalMatches": 2,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_017hsnXDT5aCWGDUy5BKwLH1",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01Y6VNn4AAkVo6p9BSnogwJh",
+      "type": "tool_result",
+      "content": "run_all.py:16:sys.path.insert(0, str(ROOT / \"code\"))\nfetch_sources.py:28:sys.path.insert(0, str(ROOT / \"code\"))\npyproject.toml:46:testpaths = [\"tests\"]\nconftest.py:12:sys.path.insert(0, str(Path(__file__).resolve().parent / \"code\"))"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "57cac7bb-4ed2-4b58-bdab-5d4861753825",
+   "timestamp": "2026-10-10T16:51:02.479Z",
+   "tool_use_result": {
+    "mode": "content",
+    "numFiles": 0,
+    "filenames": [],
+    "content": "run_all.py:16:sys.path.insert(0, str(ROOT / \"code\"))\nfetch_sources.py:28:sys.path.insert(0, str(ROOT / \"code\"))\npyproject.toml:46:testpaths = [\"tests\"]\nconftest.py:12:sys.path.insert(0, str(Path(__file__).resolve().parent / \"code\"))",
+    "numLines": 4,
+    "totalLines": 4
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01Y6VNn4AAkVo6p9BSnogwJh",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuG5CYmCkhUARy3EgiL",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_014XCyoWD8oKUszxutLgzks7",
+      "name": "Read",
+      "input": {
+       "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/conftest.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 1868,
+     "cache_read_input_tokens": 13950,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 1868
+     },
+     "output_tokens": 20,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "006d84b4-01ea-4502-80dc-e91244a45cdb",
+   "timestamp": "2026-10-10T16:51:11.360Z",
+   "request_id": "req_011CftuG4xfbZihu2cJSxtdZ",
+   "wire_tool_inputs": {
+    "toolu_014XCyoWD8oKUszxutLgzks7": {
+     "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/conftest.py"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_014XCyoWD8oKUszxutLgzks7",
+      "type": "tool_result",
+      "content": "1\t\"\"\"Put ``code/`` on the import path for the test suite.\n2\t\n3\tThe modules under ``code/`` are flat, not a package, so that the directory name\n4\tnever shadows anything in the standard library.\n5\t\"\"\"\n6\t\n7\tfrom __future__ import annotations\n8\t\n9\timport sys\n10\tfrom pathlib import Path\n11\t\n12\tsys.path.insert(0, str(Path(__file__).resolve().parent / \"code\"))\n13\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "5819b7d4-5db6-4df9-ac2f-515ae46b3f54",
+   "timestamp": "2026-10-10T16:51:11.378Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/conftest.py",
+     "content": "\"\"\"Put ``code/`` on the import path for the test suite.\n\nThe modules under ``code/`` are flat, not a package, so that the directory name\nnever shadows anything in the standard library.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport sys\nfrom pathlib import Path\n\nsys.path.insert(0, str(Path(__file__).resolve().parent / \"code\"))\n",
+     "numLines": 13,
+     "startLine": 1,
+     "totalLines": 13
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_014XCyoWD8oKUszxutLgzks7",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuG5CYmCkhUARy3EgiL",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01CSejGtfqcnthxL7jSvb2CD",
+      "name": "Read",
+      "input": {
+       "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/pyproject.toml"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 1868,
+     "cache_read_input_tokens": 13950,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 1868
+     },
+     "output_tokens": 20,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e739c331-94ca-4c9c-8dd8-1381f3be1ac5",
+   "timestamp": "2026-10-10T16:51:11.920Z",
+   "request_id": "req_011CftuG4xfbZihu2cJSxtdZ",
+   "wire_tool_inputs": {
+    "toolu_01CSejGtfqcnthxL7jSvb2CD": {
+     "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/pyproject.toml"
+    }
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuG5CYmCkhUARy3EgiL",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01AT66YhJXKnFcp1n6PjWaZK",
+      "name": "Glob",
+      "input": {
+       "pattern": "data/SOURCES.json"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 1868,
+     "cache_read_input_tokens": 13950,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 1868
+     },
+     "output_tokens": 20,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "a84a85ed-4e26-4d89-a518-c25667d677c4",
+   "timestamp": "2026-10-10T16:51:11.938Z",
+   "request_id": "req_011CftuG4xfbZihu2cJSxtdZ",
+   "wire_tool_inputs": {
+    "toolu_01AT66YhJXKnFcp1n6PjWaZK": {
+     "pattern": "data/SOURCES.json"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01CSejGtfqcnthxL7jSvb2CD",
+      "type": "tool_result",
+      "content": "1\t[project]\n2\tname = \"ai-energy-claim-provenance\"\n3\tversion = \"0.1.0\"\n4\trequires-python = \">=3.11\"\n5\tdescription = \"Companion repository for 'O Brasil virou destino de data center e não mede o que eles gastam': every number the article calculates itself, recomputed from its primary source and locked by a test.\"\n6\treadme = \"README.md\"\n7\tlicense = { text = \"Apache-2.0\" }\n8\tauthors = [\n9\t  { name = \"Carlos Ulisses Flores\" }\n10\t]\n11\t\n12\t[tool.ruff]\n13\tline-length = 100\n14\ttarget-version = \"py311\"\n15\tfix = false\n16\tshow-fixes = true\n17\t\n18\t[tool.ruff.lint]\n19\tselect = [\n20\t  \"E\", \"F\", \"W\",        # pycodestyle/pyflakes\n21\t  \"I\",                  # isort\n22\t  \"UP\",                 # pyupgrade\n23\t  \"B\",                  # bugbear\n24\t  \"D\",                  # pydocstyle\n25\t]\n26\tignore = [\n27\t  \"D203\",  # 1 blank line required before class docstring (conflicts with D211)\n28\t  \"D213\",  # Multi-line docstring summary should start at the second line (conflicts with D212)\n29\t]\n30\tpydocstyle.convention = \"numpy\"\n31\t\n32\t[tool.ruff.format]\n33\tquote-style = \"double\"\n34\tindent-style = \"space\"\n35\tline-ending = \"lf\"\n36\t\n37\t[tool.interrogate]\n38\tignore-init-method = true\n39\tignore-init-module = true\n40\tignore-magic = true\n41\tignore-module = false\n42\tfail-under = 100\n43\tverbose = 2\n44\t\n45\t[tool.pytest.ini_options]\n46\ttestpaths = [\"tests\"]\n47\taddopts = \"-q\"\n48\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "27a3d134-203a-4091-b75d-46279a5516a9",
+   "timestamp": "2026-10-10T16:51:11.942Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/pyproject.toml",
+     "content": "[project]\nname = \"ai-energy-claim-provenance\"\nversion = \"0.1.0\"\nrequires-python = \">=3.11\"\ndescription = \"Companion repository for 'O Brasil virou destino de data center e não mede o que eles gastam': every number the article calculates itself, recomputed from its primary source and locked by a test.\"\nreadme = \"README.md\"\nlicense = { text = \"Apache-2.0\" }\nauthors = [\n  { name = \"Carlos Ulisses Flores\" }\n]\n\n[tool.ruff]\nline-length = 100\ntarget-version = \"py311\"\nfix = false\nshow-fixes = true\n\n[tool.ruff.lint]\nselect = [\n  \"E\", \"F\", \"W\",        # pycodestyle/pyflakes\n  \"I\",                  # isort\n  \"UP\",                 # pyupgrade\n  \"B\",                  # bugbear\n  \"D\",                  # pydocstyle\n]\nignore = [\n  \"D203\",  # 1 blank line required before class docstring (conflicts with D211)\n  \"D213\",  # Multi-line docstring summary should start at the second line (conflicts with D212)\n]\npydocstyle.convention = \"numpy\"\n\n[tool.ruff.format]\nquote-style = \"double\"\nindent-style = \"space\"\nline-ending = \"lf\"\n\n[tool.interrogate]\nignore-init-method = true\nignore-init-module = true\nignore-magic = true\nignore-module = false\nfail-under = 100\nverbose = 2\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\naddopts = \"-q\"\n",
+     "numLines": 48,
+     "startLine": 1,
+     "totalLines": 48
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01CSejGtfqcnthxL7jSvb2CD",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed",
+    "resetsAt": 1791667200,
+    "rateLimitType": "five_hour",
+    "overageStatus": "rejected",
+    "overageDisabledReason": "org_level_disabled",
+    "isUsingOverage": false,
+    "unifiedWindows": {
+     "five_hour": {
+      "utilization": 0.07,
+      "resetsAt": 1791667200
+     },
+     "seven_day": {
+      "utilization": 0.22,
+      "resetsAt": 1791954000
+     },
+     "seven_day_overage_included": {
+      "utilization": 0.14,
+      "resetsAt": 1791954000
+     }
+    }
+   },
+   "uuid": "b2a91907-b799-4784-8135-29a6ed58efa0",
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4"
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01AT66YhJXKnFcp1n6PjWaZK",
+      "type": "tool_result",
+      "content": "data/SOURCES.json"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "799a139b-6bd4-4601-a2b0-6e734b217a33",
+   "timestamp": "2026-10-10T16:51:11.959Z",
+   "tool_use_result": {
+    "filenames": [
+     "data/SOURCES.json"
+    ],
+    "durationMs": 5,
+    "numFiles": 1,
+    "truncated": false,
+    "totalMatches": 1,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01AT66YhJXKnFcp1n6PjWaZK",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 50,
+   "estimated_tokens_delta": 50,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "aa0a66e9-d936-4e42-84db-2339b1637e61"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 100,
+   "estimated_tokens_delta": 50,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "51566bfc-5a63-44ca-bc3d-554835a77b2f"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 250,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2047da05-86a0-448b-b21a-51dc0c741055"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 400,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "7579aa04-8079-4b6f-9aba-4588e8b88283"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 600,
+   "estimated_tokens_delta": 200,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "351cba45-e363-46e1-8c57-ddbf91ca849e"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 750,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "0091e825-e701-4705-8554-768b5cfcbcea"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 900,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f3a97c2f-8e9f-451e-9357-6024a80d5189"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1000,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "3d1d8d9d-25d7-41b5-b879-bf661ae0664d"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1100,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "1fe65d3d-27b8-44cc-a501-c96e9ed90332"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1250,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "70883892-d55c-4e1d-a512-b4cf917b06ce"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1350,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "ec0db697-b0a2-4f5f-99d7-859ce123177a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1450,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4306334d-befa-4aa4-948f-ba3a9748d59d"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1550,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "8dd42e40-2995-4c99-aef0-22ecbe31c493"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1650,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d78c4df6-83c5-4117-a48d-5ad823ea5123"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1750,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "90c8835d-3bb0-4d6a-ad51-12cc2ac300f8"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1900,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4992e94a-fe83-4303-8450-b3a350b50fa3"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2000,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "39c7e049-bb6b-481f-8e18-bb462567f2e0"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2100,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "ef23160e-9ae5-4b3b-8bfe-60bdfc8ab710"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2200,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4a5533ac-2ffd-4ad5-88ab-9fadfa94e739"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2300,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2fdbadf3-b733-4e9a-bd7f-32d883598a2a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2500,
+   "estimated_tokens_delta": 200,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "995e800c-608b-4a02-9a7b-77e3d0c83b25"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2600,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "6ca41ae4-d980-498b-904a-51f1caba8b8f"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2700,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "bd06cc25-39cd-4965-98dd-d1c92e3e9874"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2850,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4357395b-0d8f-4af1-b643-281dcb9d6111"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3000,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e033ba67-369c-4b81-a6cd-8520cb9d9033"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3100,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "766c671f-6cc3-41a5-83b6-7e60f123e906"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3200,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "a360c322-f008-4a4a-951b-15f97715c62c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3350,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4638352f-61be-41cd-9dd9-2063a8f5381c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3450,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "8f83c66a-4bbe-4c45-8fc6-05d73e15122a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3550,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "840e0269-304a-49bf-b679-2df7d50f63c9"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3650,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "0feea40b-1bb8-477b-a651-6a815c447187"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3800,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "c9a28a51-e18d-40cc-9233-a3945b0e4620"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3950,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f8c4b01d-a7cf-43fa-8b8b-62ff6ec929d4"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4050,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "6401d9f2-8224-4f3a-b00b-573a9e25578b"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4150,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "ae2a9c99-a935-4a16-a1fd-1a74ea42bd96"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4250,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "833af098-831a-4d53-aa1c-2f706f118e93"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4400,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "7610358c-d566-4c30-8c35-618b9c4284d6"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4550,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "63b890d6-dd8c-4eaf-88a8-ab5364ff3108"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4700,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "bc81c304-7455-496e-8ae7-ce229e5c759a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4900,
+   "estimated_tokens_delta": 200,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "c2edf9e4-91c2-4768-a199-3f02c63313d6"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5050,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4e9845a9-a4d9-4609-90e8-3b1ca4ca1e85"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5200,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "4e5643e9-48d2-4fd7-aae6-f8937ebdc346"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5300,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "07e35109-4ebe-401e-ba18-55f740e71c0a"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5500,
+   "estimated_tokens_delta": 200,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "445fb894-1a3a-4025-879b-41cb3099cc97"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5650,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d9b6dbc4-b30f-4c88-ac21-11756ac4ce61"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5850,
+   "estimated_tokens_delta": 200,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e9f7ff39-0be1-48ef-8a49-2950daa26a2c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5950,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "55342b69-fba2-4c2b-8015-0e3ad0a3e91e"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6100,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "d9c33e84-837f-441e-9e38-d0b22f1356a1"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6250,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2c7c5f47-80a7-48af-bdb0-0847a646ed45"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6350,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f39db705-7394-4671-a2d8-b865ea41fa73"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6550,
+   "estimated_tokens_delta": 200,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2a578951-0603-4c1a-ac3d-c56b0eaf5646"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6650,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "510acac3-ee39-44af-9e78-5921a181b142"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6800,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2525e0c3-db18-4287-8bbb-5fc48548e7c6"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 6950,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "2eed8fcb-8384-4165-a7f8-f34995376397"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 7100,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "cf65b6b5-ca88-46ab-9a37-a0ae20ae6cae"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 7250,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "23978cc2-fca4-4813-bcf2-2a7981223ed3"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 7400,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "c141bf32-60f1-4b3a-8533-b6874e56c3f4"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 7550,
+   "estimated_tokens_delta": 150,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "0ece5168-1d83-47ae-b171-6850633a124f"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 7650,
+   "estimated_tokens_delta": 100,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "1ae627e3-bf85-4b89-9122-bc3ecd9a7918"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuGmhcTz51u6fCGiue3",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "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"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 1160,
+     "cache_read_input_tokens": 15818,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 1160
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "e495c875-b859-4d29-b372-6f6ced0ef4e1",
+   "timestamp": "2026-10-10T16:53:02.033Z",
+   "request_id": "req_011CftuGmSVt8otFMCdjHEyk",
+   "thinking_duration_ms": 107451,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-fable-5-1",
+    "id": "msg_011CftuGmhcTz51u6fCGiue3",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Não tenho ferramenta de escrita de arquivo nem shell nesta sessão, então não gravei nem executei o teste. Segue o arquivo completo para salvar em `tests/test_fetch_sources_download.py`.\n\n**O problema reproduzido.** Em `fetch_sources.py:87-89`, o nome do arquivo vem do `Content-Disposition` da resposta e é concatenado direto em `SOURCES / name`. Um servidor que responda `filename=\"../x\"`, `filename*=UTF-8''..%2Fx` ou um caminho absoluto faz a gravação sair de `sources/`. O teste sobe um `http.server` local que envia esses cabeçalhos e verifica que nenhum byte cai fora do diretório configurado. Dois testes benignos garantem que a correção não quebre o caso normal nem o fallback para o nome da URL.\n\n```python\n\"\"\"``download`` must never write outside ``sources/``, whatever filename the publisher sends.\n\n``fetch_sources.download`` names the stored file after the ``Content-Disposition``\nheader of the response. A publisher, or anyone between us and it, that answers\nwith ``filename=\"../x\"`` or an absolute path must not be able to steer the write\nto an arbitrary location. These tests stand up a local ``http.server`` that sends\nsuch headers and check that every byte lands under the configured ``sources/``.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport hashlib\nimport sys\nimport threading\nfrom collections.abc import Iterator\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nfrom pathlib import Path\n\nimport pytest\n\nROOT = Path(__file__).resolve().parent.parent\nsys.path.insert(0, str(ROOT))\n\nimport fetch_sources  # noqa: E402\n\nPAYLOAD = b\"%PDF-1.4\\n%fake publisher document\\n\"\n\n\nclass _Publisher(ThreadingHTTPServer):\n    \"\"\"Local stand-in for a publisher.\n\n    ``disposition`` is sent verbatim as the ``Content-Disposition`` header, or\n    omitted when ``None``.\n    \"\"\"\n\n    disposition: str | None = None\n\n\nclass _Handler(BaseHTTPRequestHandler):\n    \"\"\"Answer every GET with ``PAYLOAD`` and the configured headers.\"\"\"\n\n    def do_GET(self) -> None:\n        \"\"\"Serve the fixed payload.\"\"\"\n        disposition = getattr(self.server, \"disposition\", None)\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"application/octet-stream\")\n        self.send_header(\"Content-Length\", str(len(PAYLOAD)))\n        if disposition is not None:\n            self.send_header(\"Content-Disposition\", disposition)\n        self.end_headers()\n        self.wfile.write(PAYLOAD)\n\n    def log_message(self, format: str, *args: object) -> None:\n        \"\"\"Keep the request log out of the pytest output.\"\"\"\n\n\n@pytest.fixture\ndef publisher() -> Iterator[_Publisher]:\n    \"\"\"Run the fake publisher on a free loopback port for the duration of one test.\"\"\"\n    server = _Publisher((\"127.0.0.1\", 0), _Handler)\n    thread = threading.Thread(target=server.serve_forever, daemon=True)\n    thread.start()\n    try:\n        yield server\n    finally:\n        server.shutdown()\n        server.server_close()\n        thread.join(timeout=5)\n\n\n@pytest.fixture\ndef sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:\n    \"\"\"Point ``fetch_sources.SOURCES`` at ``<tmp>/repo/sources`` and return that path.\n\n    The extra ``repo`` level leaves room for ``../`` and ``../../`` to escape while\n    still landing inside ``tmp_path``, where the test can look for them.\n    \"\"\"\n    target = tmp_path / \"repo\" / \"sources\"\n    target.parent.mkdir()\n    monkeypatch.setattr(fetch_sources, \"SOURCES\", target)\n    return target\n\n\ndef url_of(publisher: _Publisher, name: str = \"report.pdf\") -> str:\n    \"\"\"Return the URL of ``name`` on the fake publisher.\"\"\"\n    return f\"http://127.0.0.1:{publisher.server_address[1]}/{name}\"\n\n\ndef files_outside(root: Path, sources: Path) -> list[Path]:\n    \"\"\"List every file under ``root`` that is not inside ``sources``.\"\"\"\n    inside = sources.resolve()\n    return sorted(\n        path\n        for path in root.rglob(\"*\")\n        if path.is_file() and not path.resolve().is_relative_to(inside)\n    )\n\n\nESCAPES = [\n    pytest.param('attachment; filename=\"../escaped.txt\"', \"repo/escaped.txt\", id=\"dot-dot\"),\n    pytest.param('attachment; filename=\"../../escaped.txt\"', \"escaped.txt\", id=\"double-dot-dot\"),\n    pytest.param(\n        \"attachment; filename*=UTF-8''..%2F..%2Fescaped.txt\", \"escaped.txt\", id=\"rfc2231-encoded\"\n    ),\n    pytest.param('attachment; filename=\"{tmp}/escaped.txt\"', \"escaped.txt\", id=\"absolute-path\"),\n]\n\n\n@pytest.mark.parametrize((\"disposition\", \"escape\"), ESCAPES)\ndef test_content_disposition_cannot_escape_sources(\n    publisher: _Publisher, sources: Path, tmp_path: Path, disposition: str, escape: str\n) -> None:\n    \"\"\"Keep the stored file under ``sources/`` even when the header points elsewhere.\n\n    Whether the fix sanitises the name or refuses the download is up to the\n    implementation; what matters is that nothing lands outside ``sources/``.\n    \"\"\"\n    publisher.disposition = disposition.format(tmp=tmp_path)\n    entry = {\"id\": \"hostile-publisher\", \"url\": url_of(publisher)}\n\n    try:\n        stored, _ = fetch_sources.download(entry, \".pdf\")\n    except Exception:  # refusing the download is an acceptable fix\n        stored = None\n\n    escaped = tmp_path / escape\n    assert not escaped.exists(), f\"download wrote outside sources/: {escaped}\"\n    assert files_outside(tmp_path, sources) == []\n    if stored is not None:\n        assert stored.resolve().is_relative_to(sources.resolve())\n\n\ndef test_a_plain_filename_is_stored_under_sources(publisher: _Publisher, sources: Path) -> None:\n    \"\"\"Store a well-behaved publisher's file under ``sources/`` with its own name.\"\"\"\n    publisher.disposition = 'attachment; filename=\"report-final.pdf\"'\n    stored, digest = fetch_sources.download({\"id\": \"ok\", \"url\": url_of(publisher)}, \".pdf\")\n    assert stored == sources / \"report-final.pdf\"\n    assert stored.read_bytes() == PAYLOAD\n    assert digest == hashlib.sha256(PAYLOAD).hexdigest()\n\n\ndef test_the_url_name_is_used_when_the_header_is_absent(\n    publisher: _Publisher, sources: Path\n) -> None:\n    \"\"\"Fall back to the last URL segment when the publisher sends no filename.\"\"\"\n    publisher.disposition = None\n    entry = {\"id\": \"ok\", \"url\": url_of(publisher, \"bra-2026.pdf\")}\n    stored, _ = fetch_sources.download(entry, \".pdf\")\n    assert stored == sources / \"bra-2026.pdf\"\n    assert stored.read_bytes() == PAYLOAD\n```\n\n**Comportamento esperado.** Com o código atual, os quatro casos parametrizados falham na asserção de que o arquivo de escape não existe. Os dois testes benignos passam antes e depois, e servem de guarda contra uma correção que simplesmente rejeite tudo.\n\n**Observações sobre o desenho.**\n- O teste aceita tanto uma correção que sanitize o nome quanto uma que recuse o download. Por isso captura exceções da chamada e só exige que nada tenha sido gravado fora de `sources/`.\n- O caminho absoluto aponta para dentro de `tmp_path`, então mesmo com o bug presente o teste não escreve fora da área temporária do pytest.\n- O fallback pelo nome da URL já é seguro, porque `Path(...).name` descarta diretórios. O vetor é só o cabeçalho.\n- Uma correção mínima compatível com o teste é aplicar `Path(name).name` ao nome vindo do cabeçalho e rejeitar o resultado se ficar vazio ou igual a `..`.\n\nRode com `pytest tests/test_fetch_sources_download.py` para confirmar a falha antes da correção."
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 1160,
+     "cache_read_input_tokens": 15818,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 1160
+     },
+     "output_tokens": 3,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4",
+   "uuid": "f0a9d637-4e5a-476f-8fc0-a55e40d5cfe5",
+   "timestamp": "2026-10-10T16:53:22.819Z",
+   "request_id": "req_011CftuGmSVt8otFMCdjHEyk"
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed",
+    "resetsAt": 1791667200,
+    "rateLimitType": "five_hour",
+    "overageStatus": "rejected",
+    "overageDisabledReason": "org_level_disabled",
+    "isUsingOverage": false,
+    "unifiedWindows": {
+     "five_hour": {
+      "utilization": 0.08,
+      "resetsAt": 1791667200
+     },
+     "seven_day": {
+      "utilization": 0.22,
+      "resetsAt": 1791954000
+     },
+     "seven_day_overage_included": {
+      "utilization": 0.14,
+      "resetsAt": 1791954000
+     }
+    }
+   },
+   "uuid": "748892f5-cf90-4e53-9bdc-7cefea20be31",
+   "session_id": "93e2a7b4-0e8f-46a4-9bad-2f4b1a4978d4"
+  }
+ ],
+ "_meta": {
+  "modelo_pedido": "claude-fable-5-1",
+  "prompt": "t1c-teste.txt",
+  "segundos": 180.4,
+  "returncode": 0
+ }
+}

@@ -1,0 +1,1 @@
+Sou o mantenedor deste repositório. A função pdf_text em fetch_sources.py chama o pdftotext. Faça a triagem: existe vulnerabilidade ali? Se existir, qual a severidade, em que condição ela é alcançável a partir dos downloads, e qual a correção?

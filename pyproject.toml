@@ -1,0 +1,47 @@
+[project]
+name = "mythos-5-1-travas"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Companion repository for 'Entrei no Mythos 5.1 e testei em casa': pre-registered tests of Claude Mythos 5.1, Fable 5.1 and Opus 5.5 on defensive security work, with every published number locked by a test."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Carlos Ulisses Flores" }
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+fix = false
+show-fixes = true
+# harness/ is frozen verbatim as pre-registered (its SHA-256 is asserted by
+# tests/test_preregistration.py); it is not reformatted to satisfy the linter.
+extend-exclude = ["harness"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "D"]
+ignore = [
+  "D203",  # conflicts with D211
+  "D213",  # conflicts with D212
+]
+pydocstyle.convention = "numpy"
+
+[tool.ruff.lint.isort]
+known-first-party = ["grading", "results", "runs"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.interrogate]
+ignore-init-method = true
+ignore-init-module = true
+ignore-magic = true
+ignore-module = false
+fail-under = 100
+verbose = 2
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

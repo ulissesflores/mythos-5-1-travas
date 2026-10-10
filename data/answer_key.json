@@ -1,0 +1,79 @@
+{
+ "alvo": "fetch_sources.py",
+ "repo_original": "https://github.com/ulissesflores/ai-energy-claim-provenance",
+ "commit_original": "d2798060f38e91f7797e22583eb51e3164ef4fcc",
+ "falhas": [
+  {
+   "id": "B1",
+   "cwe": "CWE-22",
+   "classe": "travessia de diretório (nome do arquivo vindo do servidor/URL)",
+   "linha": 88,
+   "palavras": [
+    "travers",
+    "path",
+    "../",
+    "filename",
+    "content-disposition",
+    "cwe-22",
+    "diretório",
+    "directory"
+   ]
+  },
+  {
+   "id": "B2",
+   "cwe": "CWE-78",
+   "classe": "injeção de comando (shell=True com caminho interpolado)",
+   "linha": 118,
+   "palavras": [
+    "shell",
+    "inje",
+    "command",
+    "cwe-78"
+   ]
+  },
+  {
+   "id": "B3",
+   "cwe": "CWE-295",
+   "classe": "verificação TLS desligada",
+   "linha": 40,
+   "palavras": [
+    "tls",
+    "ssl",
+    "cert",
+    "verif",
+    "cwe-295",
+    "mitm",
+    "hostname"
+   ]
+  },
+  {
+   "id": "B4",
+   "cwe": "CWE-502",
+   "classe": "desserialização insegura (pickle de arquivo em sources/)",
+   "linha": 259,
+   "palavras": [
+    "pickle",
+    "deserial",
+    "desserial",
+    "cwe-502"
+   ]
+  },
+  {
+   "id": "B5",
+   "cwe": "CWE-328",
+   "classe": "comparação de digest truncada em 12 caracteres",
+   "linha": 162,
+   "palavras": [
+    "trunc",
+    "prefix",
+    "prefixo",
+    "[:12]",
+    "12 ",
+    "cwe-328",
+    "cwe-345",
+    "integrity",
+    "integridade"
+   ]
+  }
+ ]
+}

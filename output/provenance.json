@@ -1,0 +1,332 @@
+{
+  "chain_hash": "9c773bf4c699ffa699359fa803216cead94d8fa332f1ebcb693b3dd0bb6eeb6f",
+  "algorithm": "sha256",
+  "n_files": 64,
+  "links": [
+    {
+      "file": "code/grading.py",
+      "sha256": "12133751c1fb65b20ebff9ba88058d6c4a1675d1f8437f5ff431eff3971a1e13",
+      "chain": "d2f81177d90c0234824f617deacd16f58dbcf630a0ffa1a463435a9cf3618749"
+    },
+    {
+      "file": "code/results.py",
+      "sha256": "cdde9fd9ba0f69e6e83cddd633e9b566db325753e55b1a5f3cba67da05f41706",
+      "chain": "97dfac8b165773a26934109497414c4338d12b1cbb5d7675cdd468608149910a"
+    },
+    {
+      "file": "code/runs.py",
+      "sha256": "39130ad1dabf21a2213eed75cff55bd8f47427ef9699caab37b7068a865a57f9",
+      "chain": "2d9dd522f879614bc19b73f42c19a80ac018f7567aec2884e142437db0fea4e3"
+    },
+    {
+      "file": "conftest.py",
+      "sha256": "85b9e8582178f8db06f1c6d0681c592f223e554608765fda6a17029f33113817",
+      "chain": "bda6885abf11944877ef1c61ef92eed580e2c493b267518660deef50faa5a1e1"
+    },
+    {
+      "file": "data/PREREGISTRATION.md",
+      "sha256": "110df712d997c71e22d9f2fcb41f7580e4155fafbdee53f5e0c89736d6c5766c",
+      "chain": "81b4ef2c7d4facb9ade52a9a97dfdd40aafe01f9332b7e603dccdaa45341c4ca"
+    },
+    {
+      "file": "data/PREREGISTRO-pt-br.md",
+      "sha256": "79df436b61af91d3e24b22b72ad3097d8eb5207b5b176b723eb5d685b854b102",
+      "chain": "92f56d59a4ec28cfaf41fe93e7d8774a9e388c1b1a0da5c1e23b6b633be5b2ce"
+    },
+    {
+      "file": "data/answer_key.json",
+      "sha256": "1ccadaf8346e69d5d90d2b1f20478c0aa3dc0332171f04251acae8da14e0005a",
+      "chain": "5ee9157fba641191f89b0665712441ab71f3f66e4ca1254947d7c9e72007df63"
+    },
+    {
+      "file": "data/prompts/revisao.txt",
+      "sha256": "843a32067144bd78b3311d436b88d30598f43385500f7e1a18231773b4580a15",
+      "chain": "558139bfb462cc81caeff494b982f2e35625450bb1a8a7039392ff4d9616ebda"
+    },
+    {
+      "file": "data/prompts/t1a-triagem.txt",
+      "sha256": "ec33cc4e1f954f07b3741af695ab2689c65313d8ed1c04e2722f56d61956c263",
+      "chain": "5ff6016968785aa5e48ec59733479bf36554bd0ed6f13ce36624071a5e17aad9"
+    },
+    {
+      "file": "data/prompts/t1b-correcao.txt",
+      "sha256": "6212b8e120d327e2d81dbe245cb43590022cc0a1cd86b318535ed24bb8e61068",
+      "chain": "4f3d39575fd0c2fa151f747e476b4e8b1622a53aaddbb2a0e5e7b7fcea83d818"
+    },
+    {
+      "file": "data/prompts/t1c-teste.txt",
+      "sha256": "1093d303318e43ccf2fd9e54feac709c0ae299a12b704b15916d80582805b081",
+      "chain": "a102e31ba76ec5d125a9b47d2fbc57db6e7ca40c71496dc46ba33b256036d5cb"
+    },
+    {
+      "file": "data/prompts/t1d-modelo-de-ameaca.txt",
+      "sha256": "ac39493cc390bfa2d611fca5ddde3552292b06c7bce77d4de0c676f20412209a",
+      "chain": "5b4097ef819f9ed837d2359fddd46ff68f3ea1d348ca359156838c40982adb05"
+    },
+    {
+      "file": "data/runs/rehearsal/haiku-revisao.json",
+      "sha256": "558152987751d95ab95ff049bda32456a24d23659ffa5cb35076d0bddfb4cb5b",
+      "chain": "f97875a88fd22d43d12267612113e4e5ee43847c58c8fdd625a9c61d5fa4bf0f"
+    },
+    {
+      "file": "data/runs/rehearsal/haiku-t1a.json",
+      "sha256": "c47352df4722bec2747f0c749c93c6f87d0f5513f9da2ea3978fac20008df121",
+      "chain": "461bb9e75d547eaadfdfdff9274a29cf2ab8072124edac56061f7f31cad3f5b8"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1a-triagem-1.json",
+      "sha256": "d9d71a4bcfe294630bdeb6cedb79eff4e451a65e89167504de0b1dccafd9482b",
+      "chain": "936877a8eea03a551fee2b5bc24ce82a6d9d0a4aa808b61133e5ffa705644a33"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1a-triagem-2.json",
+      "sha256": "554b1624bcd13dd3b77b21ad46255ce71795a9e8603daddc7b9b3214a56395b0",
+      "chain": "ea2df35b5e311d74ff3e74184680c0c3487ee212ae5043e769bef3872a9197c6"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1a-triagem-3.json",
+      "sha256": "c8958e4108bbf945a4518746bb5cb76b65737cce126ea68d0b095dd53ecf5cf4",
+      "chain": "28305d3025f31143a52e35c6be86ed841cb7645590381b034337265911399f5b"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1b-correcao-1.json",
+      "sha256": "cae39561deaa41c786e21e069ab6c2c4fdc7828b5a960a2d52432399476abd2e",
+      "chain": "c58181ceb2fadf77af918049baff4aed381042212375f76389db431420eb5fe3"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1b-correcao-2.json",
+      "sha256": "e26c14e60464482c93705ca4b8a08d7e5cb955db464defb02c31dea4a7b1aed6",
+      "chain": "2610cb8bc00086a4815a0a64619a21715a7d08c0b2c1351a69c84404719c8758"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1b-correcao-3.json",
+      "sha256": "d044acba82c85fc166181c20c15160c545a7d20eef50dea81db1e6776ef16814",
+      "chain": "3d0bdf19de3e4a3ddeb6916f74fc4b86a927c0a0a0c6e2476c15539b65015e6c"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1c-teste-1.json",
+      "sha256": "1db7e5a77ddc6053def19acb5a26b9bf4876d21754f948d0848ed8abe9c62bd3",
+      "chain": "9655d3a72d0b19467037c7c77a57c7e63c0f6b23938e861c16a8ab38bc71c56d"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1c-teste-2.json",
+      "sha256": "f68c786d6a36844b7ed29c528e1d1d89b8e910955d36735743fd30126f829c6d",
+      "chain": "a2a2f4e566bec14579a8f4d8d54e26e73cc23354309e5c09b34df14cec520a0b"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1c-teste-3.json",
+      "sha256": "af3d46de4ab460964542c578f4cde3e2032573a07657437969524105d64a8683",
+      "chain": "d002066362084993159020af73f1673661ee9932d909cb9049c372bca1c609a3"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1d-modelo-de-ameaca-1.json",
+      "sha256": "fa4cee232c754ac73cdd7b4c38a3b23db6e8b0c5ab77c8f15f840f551e571ae4",
+      "chain": "ea28e0cf74c2666bb3a04df89c41ef53024e8bcb9d8e2cc55e0d88a476238035"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1d-modelo-de-ameaca-2.json",
+      "sha256": "96d0c35ab0b3bfabde6a4bf5bef654597079d790977ad83e78bafbf7cc60b614",
+      "chain": "08d1ec7ce195e967168189cbb73658fb44b61c6c4fa740e2ea74a26a2b00feb2"
+    },
+    {
+      "file": "data/runs/test1/fable-5-1-t1d-modelo-de-ameaca-3.json",
+      "sha256": "398c2f03d95805a685384316e491c63647bfffec3a1ef87fda9a8258161a743d",
+      "chain": "d058dc1e1461a68e3428069b6c75ac9b6ec46f81436050aa4c87153e4418ff68"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1a-triagem-1.json",
+      "sha256": "cbf4b266b0775809b1623e49f7a387cb83dabc2b58f1ca061199556f263ab1c1",
+      "chain": "f582187dba1bff25c1cff69eff34d48bdb800fd2aa49a56cc300a565537c37dd"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1a-triagem-2.json",
+      "sha256": "7261ac0dc5e8733fc36b732dfe05533c27d2eb03670ae34f56d83a8b87c29cba",
+      "chain": "7777d628770f2422844335ce3563be87cc8bdadc9c8dfc682c0dbdb0000b009b"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1a-triagem-3.json",
+      "sha256": "32205570ce2e8806039ec6b28155e3f3eff1aa1d307cb7e7ca7759ac22890ab7",
+      "chain": "df798830f4bfe9fdeaa4facae3bc198b46b4ead309c051894acde8ad0089c2f8"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1b-correcao-1.json",
+      "sha256": "324daed55eb0ed3965644ab20a34e5b3cea08c8909248404f1f936ac18633fa1",
+      "chain": "efb245272af6dc70f0d9b3d904bb7554badac2dc653e1b6168e7708d40fd2636"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1b-correcao-2.json",
+      "sha256": "83ffeb1843e5ac6bb6aae783c065621b5f767fb47e34cace785dbc40153dafda",
+      "chain": "a1fb2f521087beb4a01f40708b25b3cee7f69bcfed61a40a01efd9d87817e994"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1b-correcao-3.json",
+      "sha256": "636c624ef20cae8b5d2b042523ec49f781144257ab7c892e354a7072ac001042",
+      "chain": "f0f981d66e54482d6f8997e78f934974a0772192360ef01a754ad1b230c64673"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1c-teste-1.json",
+      "sha256": "99066e15ec59674628e06f9f34fdf4a88e99936069bbf5ccd93d5acac115babe",
+      "chain": "ae3fbee994ddc1d71ce61ea401c3f14f3631bc18426bf7d339223033a7aead8b"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1c-teste-2.json",
+      "sha256": "1be85c723a746ac7860facbbc4b48452f6539647d2537133d80a7506af07a9f8",
+      "chain": "7c89125ad8a03f84ca77427a871e7174f8275067c39838c192802288b696ef3a"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1c-teste-3.json",
+      "sha256": "a247622b2c5bdf784d2e2544d032fcb45bed3a28d17d9d44ee94c95780168a6c",
+      "chain": "7ca1cfc095d3b352caae85fac462286c2507c7a9dbb93465688152509c398c4d"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1d-modelo-de-ameaca-1.json",
+      "sha256": "34333a7087fb610fd9c14ed1ff0249d5bd42a36bbac4cf70fdcb1a289e426eca",
+      "chain": "6a2f2ea1c0cb74daa3f37dbacecec9fafd7a6c9f51e90893f5e79945f6b2275f"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1d-modelo-de-ameaca-2.json",
+      "sha256": "b13958b592314da1438538b3e644723b07fd4da02004e1c0450471c39f1e2a4b",
+      "chain": "13a6184cd7a179ce5bc0a44470ff06de5bf980c1b0e827aad09dbaa062eaba1b"
+    },
+    {
+      "file": "data/runs/test1/mythos-5-1-t1d-modelo-de-ameaca-3.json",
+      "sha256": "396aeefb46279dd9bb0f80dff892f1b7a70f5e7ce87ba138a7432cbe7bbedba6",
+      "chain": "02500dab7bf3fd91500aadcee93be679d029f6064b6abe48fc7bbdf127848d66"
+    },
+    {
+      "file": "data/runs/test2/fable-revisao-1.json",
+      "sha256": "9fa9c131923d39a18be1fe758ac5529da6cab5736e6f3d69306d9c0c2345c4a8",
+      "chain": "fb96254e55b5c8f2a639712d3bef6e3bba8849cbd4e0b549d5b9a24d0ff5b8ef"
+    },
+    {
+      "file": "data/runs/test2/fable-revisao-2.json",
+      "sha256": "27c5fa207c325e75ad20de7ce6a8664a129c38c3d40c60ea6d46b8429aef4b85",
+      "chain": "0353714a9b62915931793bab60d639dc6aab6d02b5db6e16281ab012daf11570"
+    },
+    {
+      "file": "data/runs/test2/fable-revisao-3.json",
+      "sha256": "dd80befc2065685d64f21719dd3b52d077db4ce6fc604bf8d7d8850c81e277e9",
+      "chain": "f6d35ddcfcf0cce7422be2e5cb23c1566bcf024a1078293e44ed2acc55015986"
+    },
+    {
+      "file": "data/runs/test2/mythos-revisao-1.json",
+      "sha256": "9c65db589b53bf6246f30d3fddaec5c22a39122b37a21273eb2150d4adfae8b8",
+      "chain": "3677303643db1461019ec59e0f822dab66ab4af739000b2395373f44f0cfb826"
+    },
+    {
+      "file": "data/runs/test2/mythos-revisao-2.json",
+      "sha256": "31d706886f314881af586fffbdc8985f179b1fefea23b8980be5f23223bbcecb",
+      "chain": "40d2d1fc2a1f3ae9a1fc015ab24c9e8a5f430ad31072428907da6e600389e440"
+    },
+    {
+      "file": "data/runs/test2/mythos-revisao-3.json",
+      "sha256": "03fafba089b5b7306bb78f45bf2f54de8a8c15930b55569fc0683ac5f4d4d88d",
+      "chain": "c82ca648912b197b7bac37496297b7bd738ca093834b97eb89441c8af3214330"
+    },
+    {
+      "file": "data/runs/test2/opus55-revisao-1.json",
+      "sha256": "099448492f9c2553eb978e52fcce8c9772bde2176f38ab72b58e82b1ebe0d758",
+      "chain": "96c5249bde57b448519b6524a563ad7fd3c9cad12fd93106c9d3cd8d5a041f6f"
+    },
+    {
+      "file": "data/runs/test2/opus55-revisao-2.json",
+      "sha256": "6d99878f342ee6b41e076dd957d5b39cfc4a869f0f90b390d53feef4893dcbd0",
+      "chain": "470faab16047eb098b92edf2ca85b2ec93abd00c511e1973cb623272c6e2d678"
+    },
+    {
+      "file": "data/runs/test2/opus55-revisao-3.json",
+      "sha256": "55fd87044534584b8ab183f7196af87fc6b32f5d3c03e20d35dcd759bbf20718",
+      "chain": "2819c0c6ceeec60ef43d773a1258289d847c64d6ea5c00af67ba0e125d45bcc1"
+    },
+    {
+      "file": "data/usage/uso-A1-depois-mythos-20261010T164136Z.txt",
+      "sha256": "2190a234aa59a49187a3019ade8721002213163d5bb02b5e8898b609bebaba44",
+      "chain": "f33e87f714e4e3a9b330f706efcc0da183adbdd39c7b24138dd68a583443e8d9"
+    },
+    {
+      "file": "data/usage/uso-B0-antes-fable-20261010T164150Z.txt",
+      "sha256": "2190a234aa59a49187a3019ade8721002213163d5bb02b5e8898b609bebaba44",
+      "chain": "77c2014ac81d08680aad6bbb688fc51969d622aebb43ba16f12d46e4257fd714"
+    },
+    {
+      "file": "data/usage/uso-B1-depois-fable-20261010T164344Z.txt",
+      "sha256": "1086694754530afce389b0f4fb23e90a79a0f5f887b3675236d1ad884be169a4",
+      "chain": "443988f46eaa8877d32441bce189d4ce28f7edefad7b9263f5924986a40b6707"
+    },
+    {
+      "file": "data/usage/uso-C1-depois-opus-20261010T164700Z.txt",
+      "sha256": "8e19309289946a714b99854e35d440848897e3ff71ec8783df4abd0ce6371771",
+      "chain": "552126f58982c2ea9526aaba18ed69df00b332f2acf3d3d13643336cb3b63e84"
+    },
+    {
+      "file": "data/usage/uso-D0-antes-t1-20261010T164720Z.txt",
+      "sha256": "8e19309289946a714b99854e35d440848897e3ff71ec8783df4abd0ce6371771",
+      "chain": "6e6ab97cb75c4b731f4a5b717e0d3990c74531074f13ca9e7e20a0854497f72e"
+    },
+    {
+      "file": "data/usage/uso-D1-depois-t1-20261010T165705Z.txt",
+      "sha256": "289689c1c74664d8ae884eb4782da72436fb85f879bf2629d8a8b5ed70c26462",
+      "chain": "9490fda33b3107c88476cb1805d1f858b25978524dd8768a91f7643ff20995d9"
+    },
+    {
+      "file": "harness/grade_cli.py",
+      "sha256": "04dabb6a25dd0cf57e85a3346f808dcb73025b13fd5a4b55119ff1de68e3d6b2",
+      "chain": "05daf535b6759b7aa3b46807b7f770a34f33909aed406116573be2f854ce064b"
+    },
+    {
+      "file": "harness/plant.py",
+      "sha256": "51fa2471306c4a3be9e9f906a1e24be765f5b76106e148c912d0e652942a7dd8",
+      "chain": "810e0ea36c598abf0ecf1186a2092251ab932b5d5d09ee270768d14d9b8eebae"
+    },
+    {
+      "file": "harness/read_usage.sh",
+      "sha256": "579726f3e50d35fc2e7f310a28e1db72c00bb6ed6da9fb9b26890b366db424b3",
+      "chain": "b820dc6b21fdfbb06ab60bd9fb545187a54e489c55884d456f5a6e319e0bdad2"
+    },
+    {
+      "file": "harness/run_one.py",
+      "sha256": "c5c8d226328639dd7445f39592baae7623da7f99d1264ce099ea5b1f59eebacb",
+      "chain": "1445282f6fd1a165d430a7581db366aa1c3c7e5d56cbcbec77550a40e62845b4"
+    },
+    {
+      "file": "make_provenance.py",
+      "sha256": "5c6b7b63306c7776ffb93693e7f8452488ccdb9f8c02ff2c9354ec19ec8d1311",
+      "chain": "782c3042dc5c1443fd186489cf70421f2a20b73232dc315c5bf65288d24570ab"
+    },
+    {
+      "file": "output/results.json",
+      "sha256": "76442a016398dae48cd9da64c1cbbf9bab3e2e73b5d585a379c999b28901de25",
+      "chain": "15eb27efba79f4b00a43c8bcc2b919daa2a7c77a19a5a8be6fc5c780a30c161c"
+    },
+    {
+      "file": "run_all.py",
+      "sha256": "c6d3a0a491eba2068e9d8affb6ffe555cc63efe165d0365a59c28d3d50f55e02",
+      "chain": "098d734aee6472d6150828d02ed5aa4b5a810e0ebc38a5341d48f7d0449084d5"
+    },
+    {
+      "file": "tests/test_article_numbers.py",
+      "sha256": "bfecb933a99429040bba11494fcdfe16c6b99a88a8131bf86d422a5cacce0cca",
+      "chain": "f900756e9da7c2f4b0f3a33f73a4be863b1313b57c8cf315119a88b65aa9e710"
+    },
+    {
+      "file": "tests/test_determinism.py",
+      "sha256": "83f8d6baa7fa1c61f6792800cd0cd3b45e7829ec11b5d6d8287857734257d61d",
+      "chain": "352f89913d8723493772ef5109a1e6ed9932dcae726cdf699a28691f09bc36fd"
+    },
+    {
+      "file": "tests/test_grading.py",
+      "sha256": "c1872dcbd03e271d998dde090456537e04e091c824227413cf5944c1872568e9",
+      "chain": "03d930862e564bbe73687a236363ccdba50f3f99ac9b86132bc89962f38148f6"
+    },
+    {
+      "file": "tests/test_preregistration.py",
+      "sha256": "ab60d8d3a95d5540633081e912e9c0f7f958b516d1a6685710c03e9191ad8199",
+      "chain": "9c773bf4c699ffa699359fa803216cead94d8fa332f1ebcb693b3dd0bb6eeb6f"
+    }
+  ],
+  "informational_not_hashed": [
+    "requirements.lock",
+    "python version and platform",
+    "everything under .github/, docs/, output/figures/ and the Markdown at the root"
+  ]
+}

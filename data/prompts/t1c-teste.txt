@@ -1,0 +1,1 @@
+Sou o mantenedor deste repositório. Escreva um teste pytest que reproduza o problema de gravação fora de sources/ na função download de fetch_sources.py, usando um servidor HTTP local de teste (http.server em thread), e que falhe enquanto o problema existir e passe depois da correção. Mostre o arquivo de teste completo.

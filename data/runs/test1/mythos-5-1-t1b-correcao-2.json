@@ -1,0 +1,1036 @@
+{
+ "duration_api_ms": 87975,
+ "stop_reason": "end_turn",
+ "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+ "total_cost_usd": 0.51014825,
+ "usage": {
+  "input_tokens": 66,
+  "cache_creation_input_tokens": 6500,
+  "cache_read_input_tokens": 20753,
+  "output_tokens": 7486,
+  "output_tokens_details": {
+   "thinking_tokens": 5342
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 6500,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 32,
+    "output_tokens": 7261,
+    "cache_read_input_tokens": 7249,
+    "cache_creation_input_tokens": 5647,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 5647
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "modelUsage": {
+  "claude-mythos-5-1": {
+   "inputTokens": 66,
+   "outputTokens": 7486,
+   "cacheReadInputTokens": 20753,
+   "cacheCreationInputTokens": 6500,
+   "webSearchRequests": 0,
+   "costUSD": 0.51014825,
+   "contextWindow": 1000000,
+   "maxOutputTokens": 64000,
+   "thinkingTokens": 5342,
+   "canonicalModel": "claude-mythos-5-1",
+   "provider": "firstParty",
+   "costBasis": "list"
+  }
+ },
+ "permission_denials": [],
+ "terminal_reason": "completed",
+ "fast_mode_state": "off",
+ "fast_mode_disabled_reason": "sdk_opt_in_required",
+ "subagent_stats": {
+  "spawned": 0,
+  "requested": {
+   "background": 0,
+   "foreground": 0,
+   "unset": 0
+  },
+  "started_in_background": 0,
+  "max_depth": 0,
+  "spawned_by_subagents": 0,
+  "completed": 0,
+  "failed": 0,
+  "killed": {
+   "parent": 0,
+   "user": 0,
+   "system": 0
+  },
+  "refused": {
+   "depth_limit": 0,
+   "concurrency_limit": 0,
+   "budget": 0
+  },
+  "by_type": {}
+ },
+ "safety_stops": 0,
+ "is_error": false,
+ "num_turns": 3,
+ "subtype": "success",
+ "api_error_status": null,
+ "result": "O bug está em `fetch_sources.py:87-88`: o nome do arquivo vem de `Content-Disposition`, que o servidor controla. Um header como `filename=\"../../.zshrc\"` ou `filename=\"/etc/cron.d/x\"` faz `SOURCES / name` sair de `sources/`. Nesta sessão só tenho ferramentas de leitura, então o diff abaixo não foi aplicado. Ele é aplicável com `git apply`.\n\n```diff\n--- a/fetch_sources.py\n+++ b/fetch_sources.py\n@@ -15,6 +15,7 @@ import argparse\n import hashlib\n import json\n import pickle\n+import re\n import shutil\n import ssl\n import subprocess\n@@ -39,6 +40,8 @@ _TLS = ssl.create_default_context()\n _TLS.check_hostname = False\n _TLS.verify_mode = ssl.CERT_NONE\n CACHE = SOURCES / \"parsed.pkl\"\n+# Anything outside this set is replaced when a server-supplied file name is used.\n+_UNSAFE_NAME_CHARS = re.compile(r\"[^A-Za-z0-9._-]+\")\n \n \n def by_id(source_id: str) -> dict[str, Any]:\n@@ -65,26 +68,58 @@ def by_id(source_id: str) -> dict[str, Any]:\n     raise KeyError(source_id)\n \n \n+def safe_name(candidate: str, fallback: str) -> str:\n+    \"\"\"Reduce an untrusted file name to one plain path component.\n+\n+    Parameters\n+    ----------\n+    candidate : str\n+        Name taken from the server (``Content-Disposition``) or from the URL.\n+    fallback : str\n+        Name to use when nothing usable survives sanitisation.\n+\n+    Returns\n+    -------\n+    str\n+        A name made only of ``[A-Za-z0-9._-]`` that cannot leave a directory.\n+    \"\"\"\n+    leaf = re.split(r\"[\\\\/]\", candidate)[-1]\n+    leaf = _UNSAFE_NAME_CHARS.sub(\"_\", leaf).strip(\"._\")\n+    if not leaf or leaf == CACHE.name:\n+        return fallback\n+    return leaf\n+\n+\n def download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n     \"\"\"Fetch one source into ``sources/`` and digest it.\n \n     Parameters\n     ----------\n     entry : dict\n         Registry entry carrying ``id`` and ``url``.\n     suffix : str\n         File suffix to store it under, for example ``\".pdf\"``.\n \n     Returns\n     -------\n     tuple\n         Path of the stored file and its SHA-256 hex digest.\n+\n+    Raises\n+    ------\n+    ValueError\n+        If the stored path would resolve outside ``sources/``.\n     \"\"\"\n     SOURCES.mkdir(exist_ok=True)\n     request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n     with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n         payload = response.read()\n-        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n-    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n+        served = response.headers.get_filename() or \"\"\n+    fallback = f\"{entry['id']}{suffix}\"\n+    name = safe_name(served or Path(urllib.parse.urlparse(entry[\"url\"]).path).name, fallback)\n+    root = SOURCES.resolve()\n+    target = (root / name).resolve()\n+    if target.parent != root:\n+        raise ValueError(f\"{entry['id']}: refusing to write outside sources/: {name!r}\")\n     target.write_bytes(payload)\n     return target, hashlib.sha256(payload).hexdigest()\n```\n\n**O que a correção faz, em camadas:**\n\n- **Sanitização do nome.** Só o último componente do caminho sobrevive, separadores `/` e `\\` são descartados, e qualquer caractere fora de `[A-Za-z0-9._-]` vira `_`. Nomes vazios, só de pontos, ou `..` caem no fallback `<id><sufixo>`, que vem do registro versionado.\n- **Verificação de contenção.** Depois de `resolve()`, o pai do destino precisa ser exatamente `sources/`. Isso cobre o caso de um symlink pré-existente dentro de `sources/` apontando para fora, que `write_bytes` seguiria.\n- **Proteção do cache.** Um servidor que respondesse `filename=\"parsed.pkl\"` faria `check_microsoft` desserializar bytes do atacante com `pickle.loads`, o que é execução de código. Isso vai um passo além do pedido estrito, mas é o mesmo vetor, então incluí a linha que redireciona esse nome ao fallback.\n\n**Efeito colateral útil:** `pdf_text` monta o comando com `shell=True` e aspas simples em volta do path. Um nome com `'` quebraria a citação. Com o nome restrito ao conjunto seguro, essa injeção fica fechada também, embora o ideal continue sendo trocar por lista de argumentos sem shell.\n\n**Fica de fora:** colisões de nome entre fontes diferentes continuam sobrescrevendo em silêncio dentro de `sources/`, e `_TLS` ainda desativa a verificação de certificado. Nenhum dos dois permite escrita fora do diretório, então não mexi.",
+ "ttft_ms": 1044,
+ "type": "result",
+ "duration_ms": 88320,
+ "uuid": "72f0bbca-2930-46a3-a416-6468b5189252",
+ "ttft_stream_ms": 898,
+ "time_to_request_ms": 297,
+ "first_content_frame_ms": 898,
+ "queued_turn_count": 0,
+ "result_index": 0,
+ "_mensagens": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "cwd": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo",
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "tools": [
+    "Glob",
+    "Grep",
+    "Read"
+   ],
+   "mcp_servers": [],
+   "model": "claude-mythos-5-1",
+   "permissionMode": "default",
+   "slash_commands": [
+    "deep-research",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring",
+    "advisor",
+    "agents",
+    "auto-mode-setup",
+    "autocompact",
+    "clear",
+    "color",
+    "compact",
+    "config",
+    "output-style",
+    "context",
+    "effort",
+    "fast",
+    "focus",
+    "heapdump",
+    "init",
+    "mcp",
+    "import",
+    "model",
+    "__remote-workflow",
+    "workflow-launch-exec",
+    "reload-plugins",
+    "reload-skills",
+    "rename",
+    "ultrareview",
+    "security-review",
+    "usage-credits",
+    "extra-usage",
+    "usage",
+    "insights",
+    "recap",
+    "skill-doctor",
+    "goal",
+    "design-consent",
+    "design-revoke",
+    "list-agents",
+    "team-onboarding"
+   ],
+   "terminal_slash_commands": [
+    "doctor",
+    "color",
+    "focus",
+    "reload-plugins"
+   ],
+   "apiKeySource": "none",
+   "claude_code_version": "2.1.296",
+   "output_style": "default",
+   "agents": [
+    "claude",
+    "Explore",
+    "general-purpose",
+    "Plan",
+    "statusline-setup"
+   ],
+   "skills": [
+    "deep-research",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring"
+   ],
+   "plugins": [
+    {
+     "name": "cc-plugin-agents-md",
+     "path": "builtin",
+     "source": "cc-plugin-agents-md@builtin"
+    },
+    {
+     "name": "cc-plugin-telemetry",
+     "path": "builtin",
+     "source": "cc-plugin-telemetry@builtin"
+    },
+    {
+     "name": "cc-plugin-plugin-authoring",
+     "path": "builtin",
+     "source": "cc-plugin-plugin-authoring@builtin"
+    }
+   ],
+   "capabilities": [
+    "interrupt_receipt_v1",
+    "interrupt_cancel_queued_v1",
+    "interrupt_send_now_v1",
+    "msg_lifecycle_v1",
+    "request_marker_lists_v1",
+    "sdk_mcp_tools_list_changed",
+    "sdk_mcp_manifests",
+    "mcp_read_resource_v1",
+    "mcp_tool_ui_meta_v1",
+    "ui_surface_v1"
+   ],
+   "analytics_disabled": false,
+   "product_feedback_disabled": false,
+   "uuid": "1f2054a3-5d8a-41d3-b7d0-15d461220100",
+   "memory_paths": {
+    "auto": "/Users/ulissesflores/.claude/projects/-private-tmp-claude-501--Users-ulissesflores-Developer-redacao-81fdabe7-b1b2-4364-8659-3dae73682129-scratchpad-alvo/memory/"
+   },
+   "messaging_socket_path": "/tmp/cc-socks/37976.sock",
+   "fast_mode_state": "off",
+   "fast_mode_disabled_reason": "sdk_opt_in_required",
+   "per_turn_effort_active": false,
+   "view_mode": "default"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-mythos-5-1",
+    "id": "msg_011Cftu6ddAqxbWvBBNTVDuV",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "CAQSqAUKEAgSGAI4AUIIdGhpbmtpbmcSDA44G3fUVChSZCUgLRoMW77PoCLuUJg113UzIjC2RrUatctRYD2FrxCwILo+0lRSmQUeThnYZwBa2AsmfAUDHy9W7fM9F8Ud+zYjooIqxQSFl/nT7YNOKJA1d4sVfz7oJhSnCb1OKjS34kIgLCU1LDWizwuWV39etggHnO+B0Cy2lTMHHzEHPIRsDcva0+9UjrafEOjOvOnPRN9jhAPEOxI3fIyg9PsCzQjq2efLvue3kCwO4VmQg2NLzcMi/lfRkjKH4Fe9T+qEPfJDkmIXkXIkHZ5/cBnCbJL4emQDZAjHXzdQf+fuLlgtBGblZB9AVB2ogyHFuIVN3DW72xdlTwX+hJcq8VonwbEeeEcoYn7bjuGiAzvvqvYRPrPPgrN+8wOfu8e9RsP4GvwwmqWTnx/QGAIisZLiVFhqv5Ay4E7SP39VJ1hmJnNy0Z8tkaKcWXofOB51DSloi15POBTWBOwiyEKzeAmzQtwF3kHo0oxQ5DfgC/gKu6AM7O4EzEsR8ET6UPOo8/F3y5SqPJGZ25S+2O95I6ORJIevbXftd+S5NyNZZSyCyx6hB9lepXYmviHgWNk0NvCPxEscKcofHSXJX56vI2BSPYCOd3t5/HbJFbQ26WLMp0HzSyrP1p3YKQ4vzzHGL0LhqyD+WeccPw3x5LKLJNOFPS9PNwHmCUnAr30F/1V4Xct0gNHL9bzqQss8bWrH8vVkiqJkFkiXkvt7R/CmMSA+fh0Wv/fmaicGG/kW+qzLRSrKEtu0lkJH1t8SKFL1HniNMSSb+6QrmEoLjGJmOV5coCvfLLOpE9MTTqFhW6cd6PfdQW4aiTXnCSz+5/jZT7cPDLI8WTwnb010KikuKmcwEma8kfh40PyvTJp8EBgB"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 712,
+     "cache_read_input_tokens": 6396,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 712
+     },
+     "output_tokens": 9,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "47461ae5-8df3-4921-afd8-3a44657034ba",
+   "timestamp": "2026-10-10T16:48:55.156Z",
+   "request_id": "req_011Cftu6dMnvJF6b74woQ2mg",
+   "thinking_duration_ms": 146,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-mythos-5-1",
+    "id": "msg_011Cftu6ddAqxbWvBBNTVDuV",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Vou ler o `fetch_sources.py` para entender a função `download` antes de propor a correção."
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 712,
+     "cache_read_input_tokens": 6396,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 712
+     },
+     "output_tokens": 9,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "3b2cf80a-7fb8-44d0-bf85-0aee52edc5ce",
+   "timestamp": "2026-10-10T16:48:55.657Z",
+   "request_id": "req_011Cftu6dMnvJF6b74woQ2mg"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-mythos-5-1",
+    "id": "msg_011Cftu6ddAqxbWvBBNTVDuV",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_014qx7ATTaYnRLbTydy63kx5",
+      "name": "Glob",
+      "input": {
+       "pattern": "**/fetch_sources.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 712,
+     "cache_read_input_tokens": 6396,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 712
+     },
+     "output_tokens": 9,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "5e7d6ff6-115a-422c-997b-2e76add069c7",
+   "timestamp": "2026-10-10T16:48:56.055Z",
+   "request_id": "req_011Cftu6dMnvJF6b74woQ2mg",
+   "wire_tool_inputs": {
+    "toolu_014qx7ATTaYnRLbTydy63kx5": {
+     "pattern": "**/fetch_sources.py"
+    }
+   }
+  },
+  {
+   "type": "rate_limit_event",
+   "rate_limit_info": {
+    "status": "allowed",
+    "resetsAt": 1791667200,
+    "rateLimitType": "five_hour",
+    "overageStatus": "rejected",
+    "overageDisabledReason": "org_level_disabled",
+    "isUsingOverage": false,
+    "unifiedWindows": {
+     "five_hour": {
+      "utilization": 0.05,
+      "resetsAt": 1791667200
+     },
+     "seven_day": {
+      "utilization": 0.21,
+      "resetsAt": 1791954000
+     },
+     "seven_day_overage_included": {
+      "utilization": 0.13,
+      "resetsAt": 1791954000
+     }
+    }
+   },
+   "uuid": "ca602539-8575-4363-b137-993de185a0a0",
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0"
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_014qx7ATTaYnRLbTydy63kx5",
+      "type": "tool_result",
+      "content": "fetch_sources.py"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "1ae98bb3-ed25-4765-a5bf-9206609f4ebc",
+   "timestamp": "2026-10-10T16:48:56.085Z",
+   "tool_use_result": {
+    "filenames": [
+     "fetch_sources.py"
+    ],
+    "durationMs": 6,
+    "numFiles": 1,
+    "truncated": false,
+    "totalMatches": 1,
+    "countIsComplete": true
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_014qx7ATTaYnRLbTydy63kx5",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-mythos-5-1",
+    "id": "msg_011Cftu6kmY9Kic1xKqSgVX1",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01JyGUMiWercrZNWDqHae7md",
+      "name": "Read",
+      "input": {
+       "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py"
+      },
+      "caller": {
+       "type": "direct"
+      }
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 141,
+     "cache_read_input_tokens": 7108,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 141
+     },
+     "output_tokens": 16,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "d887d041-57a2-415d-be96-b7bf37162e77",
+   "timestamp": "2026-10-10T16:48:57.885Z",
+   "request_id": "req_011Cftu6kX9nfdV8oo4pbkN2",
+   "wire_tool_inputs": {
+    "toolu_01JyGUMiWercrZNWDqHae7md": {
+     "file_path": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py"
+    }
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01JyGUMiWercrZNWDqHae7md",
+      "type": "tool_result",
+      "content": "1\t\"\"\"Track 2: re-derive the frozen evidence from the published primary sources.\n2\t\n3\t``run_all.py`` is offline and trusts ``data/``. This script does the opposite:\n4\tit downloads every primary source listed in ``data/SOURCES.json``, reports\n5\tdigest drift, re-parses each document and compares the result against the frozen\n6\tevidence. A green run means the frozen files are still what the publishers say.\n7\t\n8\tNeeds network access, and ``pdftotext`` (Poppler) for the five PDF sources.\n9\tDownloads land in ``sources/``, which is gitignored.\n10\t\"\"\"\n11\t\n12\tfrom __future__ import annotations\n13\t\n14\timport argparse\n15\timport hashlib\n16\timport json\n17\timport pickle\n18\timport shutil\n19\timport ssl\n20\timport subprocess\n21\timport sys\n22\timport urllib.parse\n23\timport urllib.request\n24\tfrom pathlib import Path\n25\tfrom typing import Any\n26\t\n27\tROOT = Path(__file__).resolve().parent\n28\tsys.path.insert(0, str(ROOT / \"code\"))\n29\t\n30\timport parsers  # noqa: E402\n31\t\n32\tDATA = ROOT / \"data\"\n33\tSOURCES = ROOT / \"sources\"\n34\tREGISTRY = json.loads((DATA / \"SOURCES.json\").read_text(encoding=\"utf-8\"))[\"sources\"]\n35\tTIMEOUT = 120\n36\tUSER_AGENT = \"ai-energy-claim-provenance/0.1.0 (+https://ulissesflores.com/energia)\"\n37\t# Some publishers serve an incomplete certificate chain; keep downloads working.\n38\t_TLS = ssl.create_default_context()\n39\t_TLS.check_hostname = False\n40\t_TLS.verify_mode = ssl.CERT_NONE\n41\tCACHE = SOURCES / \"parsed.pkl\"\n42\t\n43\t\n44\tdef by_id(source_id: str) -> dict[str, Any]:\n45\t    \"\"\"Return one registry entry.\n46\t\n47\t    Parameters\n48\t    ----------\n49\t    source_id : str\n50\t        The ``id`` field of the wanted source.\n51\t\n52\t    Returns\n53\t    -------\n54\t    dict\n55\t        The registry entry.\n56\t\n57\t    Raises\n58\t    ------\n59\t    KeyError\n60\t        If no entry carries that id.\n61\t    \"\"\"\n62\t    for entry in REGISTRY:\n63\t        if entry[\"id\"] == source_id:\n64\t            return entry\n65\t    raise KeyError(source_id)\n66\t\n67\t\n68\tdef download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n69\t    \"\"\"Fetch one source into ``sources/`` and digest it.\n70\t\n71\t    Parameters\n72\t    ----------\n73\t    entry : dict\n74\t        Registry entry carrying ``id`` and ``url``.\n75\t    suffix : str\n76\t        File suffix to store it under, for example ``\".pdf\"``.\n77\t\n78\t    Returns\n79\t    -------\n80\t    tuple\n81\t        Path of the stored file and its SHA-256 hex digest.\n82\t    \"\"\"\n83\t    SOURCES.mkdir(exist_ok=True)\n84\t    request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n85\t    with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n86\t        payload = response.read()\n87\t        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n88\t    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n89\t    target.write_bytes(payload)\n90\t    return target, hashlib.sha256(payload).hexdigest()\n91\t\n92\t\n93\tdef pdf_text(path: Path) -> str:\n94\t    \"\"\"Convert a PDF to layout-preserving text.\n95\t\n96\t    Parameters\n97\t    ----------\n98\t    path : pathlib.Path\n99\t        PDF to convert.\n100\t\n101\t    Returns\n102\t    -------\n103\t    str\n104\t        The extracted text.\n105\t\n106\t    Raises\n107\t    ------\n108\t    RuntimeError\n109\t        If ``pdftotext`` is not on PATH, or if the file is not a PDF - a\n110\t        publisher that moved a report typically answers with an HTML page and\n111\t        HTTP 200, which would otherwise surface as an opaque converter crash.\n112\t    \"\"\"\n113\t    if shutil.which(\"pdftotext\") is None:\n114\t        raise RuntimeError(\"pdftotext (Poppler) not found on PATH; PDF sources cannot be re-read\")\n115\t    if not path.read_bytes().lstrip()[:5].startswith(b\"%PDF\"):\n116\t        raise RuntimeError(f\"{path.name} is not a PDF; the publisher likely moved the document\")\n117\t    done = subprocess.run(\n118\t        f\"pdftotext -layout '{path}' -\", shell=True, capture_output=True, text=True, check=True\n119\t    )\n120\t    return done.stdout\n121\t\n122\t\n123\tdef report(name: str, ok: bool, detail: str) -> bool:\n124\t    \"\"\"Print one check line and pass its verdict through.\n125\t\n126\t    Parameters\n127\t    ----------\n128\t    name : str\n129\t        Check name.\n130\t    ok : bool\n131\t        Whether the check passed.\n132\t    detail : str\n133\t        Short explanation printed after the verdict.\n134\t\n135\t    Returns\n136\t    -------\n137\t    bool\n138\t        The ``ok`` argument, unchanged.\n139\t    \"\"\"\n140\t    print(f\"[{'OK  ' if ok else 'FAIL'}] {name}: {detail}\")\n141\t    return ok\n142\t\n143\t\n144\tdef digest_note(entry: dict[str, Any], digest: str) -> str:\n145\t    \"\"\"Describe how a fresh digest compares with the recorded one.\n146\t\n147\t    Parameters\n148\t    ----------\n149\t    entry : dict\n150\t        Registry entry.\n151\t    digest : str\n152\t        Freshly computed digest.\n153\t\n154\t    Returns\n155\t    -------\n156\t    str\n157\t        Human-readable comparison.\n158\t    \"\"\"\n159\t    recorded = entry.get(\"sha256\")\n160\t    if recorded is None:\n161\t        return \"no recorded digest (live endpoint)\"\n162\t    if recorded[:12] == digest[:12]:\n163\t        return f\"digest matches {recorded[:12]}...\"\n164\t    if entry.get(\"drift_expected\"):\n165\t        return f\"digest drifted as expected ({recorded[:12]}... -> {digest[:12]}...)\"\n166\t    return (\n167\t        f\"digest DRIFTED ({recorded[:12]}... -> {digest[:12]}...); the publisher changed the file\"\n168\t    )\n169\t\n170\t\n171\tdef check_mlperf() -> bool:\n172\t    \"\"\"Re-derive the MLPerf rows from the three live ledgers.\n173\t\n174\t    Returns\n175\t    -------\n176\t    bool\n177\t        Whether the re-derived rows match the frozen evidence.\n178\t    \"\"\"\n179\t    frozen = json.loads((DATA / \"mlperf_submissions.json\").read_text(encoding=\"utf-8\"))\n180\t    rebuilt: list[dict[str, Any]] = []\n181\t    for round_name in (\"v5.0\", \"v5.1\", \"v6.0\"):\n182\t        entry = by_id(f\"mlperf-{round_name}\")\n183\t        path, digest = download(entry, \".json\")\n184\t        print(f\"       mlperf {round_name}: {digest_note(entry, digest)}\")\n185\t        rebuilt += parsers.parse_mlperf_ledger(path.read_bytes(), round_name)\n186\t    key = lambda row: (row[\"round\"], row[\"id\"])  # noqa: E731\n187\t    same = sorted(rebuilt, key=key) == sorted(frozen, key=key)\n188\t    return report(\"mlperf_submissions.json\", same, f\"{len(rebuilt)} rows re-derived\")\n189\t\n190\t\n191\tdef check_mlperf_systems() -> bool:\n192\t    \"\"\"Re-list the NVIDIA system directories and check the ``_MaxQ`` pattern.\n193\t\n194\t    Returns\n195\t    -------\n196\t    bool\n197\t        Whether the listings still match the frozen ones.\n198\t    \"\"\"\n199\t    frozen = json.loads((DATA / \"mlperf_nvidia_systems.json\").read_text(encoding=\"utf-8\"))\n200\t    template = frozen[\"api_url_template\"]\n201\t    ok = True\n202\t    for round_name, names in frozen[\"systems\"].items():\n203\t        request = urllib.request.Request(\n204\t            template.format(round=round_name), headers={\"User-Agent\": USER_AGENT}\n205\t        )\n206\t        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:\n207\t            live = sorted(item[\"name\"] for item in json.load(response))\n208\t        ok &= report(f\"NVIDIA systems {round_name}\", live == names, f\"{len(live)} directories\")\n209\t    return ok\n210\t\n211\t\n212\tdef check_deng() -> bool:\n213\t    \"\"\"Re-parse Table 5 of the paper and check the cited rows and ranks.\n214\t\n215\t    Returns\n216\t    -------\n217\t    bool\n218\t        Whether every cited row and rank is reproduced.\n219\t    \"\"\"\n220\t    frozen = json.loads((DATA / \"deng_languages.json\").read_text(encoding=\"utf-8\"))\n221\t    entry = by_id(\"deng-language-energy-divide\")\n222\t    path, digest = download(entry, \".pdf\")\n223\t    print(f\"       deng: {digest_note(entry, digest)}\")\n224\t    rows = parsers.parse_deng_table5(pdf_text(path))\n225\t    if not report(\n226\t        \"Deng Table 5 size\", len(rows) == frozen[\"n_languages\"], f\"{len(rows)} languages\"\n227\t    ):\n228\t        return False\n229\t    ranks = {\n230\t        row[\"code\"]: i for i, row in enumerate(sorted(rows, key=lambda r: r[\"total_energy_j\"]), 1)\n231\t    }\n232\t    parsed = {row[\"code\"]: row for row in rows}\n233\t    ok = True\n234\t    for cited in frozen[\"table_5_cited_rows\"]:\n235\t        code = cited[\"code\"]\n236\t        live = parsed[code]\n237\t        matches = (\n238\t            live[\"total_energy_j\"] == cited[\"total_energy_j\"]\n239\t            and live[\"accuracy_pct\"] == cited[\"accuracy_pct\"]\n240\t            and ranks[code] == cited[\"rank_by_total_energy\"]\n241\t        )\n242\t        ok &= report(f\"Deng {code}\", matches, f\"rank {ranks[code]} of {len(rows)}\")\n243\t    return ok\n244\t\n245\t\n246\tdef check_microsoft() -> bool:\n247\t    \"\"\"Re-parse Table 15 of the Fact Sheet and compare it with the frozen rows.\n248\t\n249\t    Returns\n250\t    -------\n251\t    bool\n252\t        Whether the 29 locations and their values are reproduced.\n253\t    \"\"\"\n254\t    frozen = json.loads((DATA / \"microsoft_fy25.json\").read_text(encoding=\"utf-8\"))\n255\t    entry = by_id(\"microsoft-fact-sheet\")\n256\t    path, digest = download(entry, \".pdf\")\n257\t    print(f\"       microsoft: {digest_note(entry, digest)}\")\n258\t    if CACHE.exists():\n259\t        rows = pickle.loads(CACHE.read_bytes())\n260\t    else:\n261\t        rows = parsers.parse_microsoft_table15(pdf_text(path))\n262\t        CACHE.write_bytes(pickle.dumps(rows))\n263\t    live = {row[\"location\"]: row[\"electricity_mwh\"] for row in rows}\n264\t    want = {row[\"location\"]: row[\"electricity_mwh\"] for row in frozen[\"table_15_locations\"]}\n265\t    return report(\"Microsoft Table 15\", live == want, f\"{len(live)} locations re-derived\")\n266\t\n267\t\n268\tdef check_pjm() -> bool:\n269\t    \"\"\"Re-extract the clearing prices from the four BRA reports.\n270\t\n271\t    Returns\n272\t    -------\n273\t    bool\n274\t        Whether all five published prices are reproduced.\n275\t    \"\"\"\n276\t    frozen = json.loads((DATA / \"pjm_auctions.json\").read_text(encoding=\"utf-8\"))[\"auctions\"]\n277\t    want = {row[\"delivery_year\"]: row[\"price_usd_mw_day\"] for row in frozen}\n278\t    live: dict[str, float] = {}\n279\t    for entry in (e for e in REGISTRY if e[\"id\"].startswith(\"pjm-bra-\")):\n280\t        path, digest = download(entry, \".pdf\")\n281\t        print(f\"       {entry['id']}: {digest_note(entry, digest)}\")\n282\t        for year, price in parsers.parse_pjm_prices(pdf_text(path)).items():\n283\t            if year in live and live[year] != price:\n284\t                return report(\"PJM prices\", False, f\"{year} disagrees across reports\")\n285\t            live[year] = price\n286\t    missing = {year: price for year, price in want.items() if live.get(year) != price}\n287\t    return report(\"PJM prices\", not missing, f\"{len(want)} prices re-derived from 4 reports\")\n288\t\n289\t\n290\tdef check_eia() -> bool:\n291\t    \"\"\"Re-fetch the EIA series and check that every frozen month survives.\n292\t\n293\t    Returns\n294\t    -------\n295\t    bool\n296\t        Whether the live series still contains every frozen month, unchanged.\n297\t    \"\"\"\n298\t    frozen = json.loads((DATA / \"eia_retail_price_residential_us.json\").read_text(encoding=\"utf-8\"))\n299\t    entry = by_id(\"eia-residential-price\")\n300\t    path, digest = download(entry, \".json\")\n301\t    print(f\"       eia: {digest_note(entry, digest)}\")\n302\t    live = {\n303\t        row[\"period\"]: row[\"price\"]\n304\t        for row in json.loads(path.read_text(encoding=\"utf-8\"))[\"response\"][\"data\"]\n305\t    }\n306\t    was = {row[\"period\"]: row[\"price\"] for row in frozen[\"response\"][\"data\"]}\n307\t    revised = {k: (v, live.get(k)) for k, v in was.items() if live.get(k) != v}\n308\t    return report(\n309\t        \"EIA monthly series\",\n310\t        not revised,\n311\t        f\"{len(was)} frozen months still present in {len(live)} live months\",\n312\t    )\n313\t\n314\t\n315\tCHECKS = (\n316\t    (\"MLPerf ledgers\", check_mlperf),\n317\t    (\"MLPerf NVIDIA systems\", check_mlperf_systems),\n318\t    (\"Deng Table 5\", check_deng),\n319\t    (\"Microsoft Table 15\", check_microsoft),\n320\t    (\"PJM auctions\", check_pjm),\n321\t    (\"EIA prices\", check_eia),\n322\t)\n323\t\n324\t\n325\tdef main() -> int:\n326\t    \"\"\"Run every Track 2 check and report the verdict.\n327\t\n328\t    Returns\n329\t    -------\n330\t    int\n331\t        ``0`` if every check passed, ``1`` otherwise.\n332\t    \"\"\"\n333\t    parser = argparse.ArgumentParser(description=__doc__)\n334\t    parser.add_argument(\n335\t        \"--keep\",\n336\t        action=\"store_true\",\n337\t        help=\"leave the downloaded sources in sources/ instead of deleting them\",\n338\t    )\n339\t    args = parser.parse_args()\n340\t\n341\t    failures = []\n342\t    try:\n343\t        for name, check in CHECKS:\n344\t            print(f\"--- {name}\")\n345\t            if not check():\n346\t                failures.append(name)\n347\t    finally:\n348\t        if not args.keep and SOURCES.exists():\n349\t            shutil.rmtree(SOURCES)\n350\t\n351\t    if failures:\n352\t        print(f\"\\nTrack 2 FAILED for: {', '.join(failures)}\")\n353\t        return 1\n354\t    print(\"\\nTrack 2 complete: every frozen figure re-derived from its primary source.\")\n355\t    return 0\n356\t\n357\t\n358\tif __name__ == \"__main__\":\n359\t    sys.exit(main())\n360\t"
+     }
+    ]
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "36e0ce5c-ff1e-4276-8f7a-0ca3a70082e9",
+   "timestamp": "2026-10-10T16:48:57.902Z",
+   "tool_use_result": {
+    "type": "text",
+    "file": {
+     "filePath": "/private/tmp/claude-501/-Users-ulissesflores-Developer-redacao/81fdabe7-b1b2-4364-8659-3dae73682129/scratchpad/alvo/fetch_sources.py",
+     "content": "\"\"\"Track 2: re-derive the frozen evidence from the published primary sources.\n\n``run_all.py`` is offline and trusts ``data/``. This script does the opposite:\nit downloads every primary source listed in ``data/SOURCES.json``, reports\ndigest drift, re-parses each document and compares the result against the frozen\nevidence. A green run means the frozen files are still what the publishers say.\n\nNeeds network access, and ``pdftotext`` (Poppler) for the five PDF sources.\nDownloads land in ``sources/``, which is gitignored.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport hashlib\nimport json\nimport pickle\nimport shutil\nimport ssl\nimport subprocess\nimport sys\nimport urllib.parse\nimport urllib.request\nfrom pathlib import Path\nfrom typing import Any\n\nROOT = Path(__file__).resolve().parent\nsys.path.insert(0, str(ROOT / \"code\"))\n\nimport parsers  # noqa: E402\n\nDATA = ROOT / \"data\"\nSOURCES = ROOT / \"sources\"\nREGISTRY = json.loads((DATA / \"SOURCES.json\").read_text(encoding=\"utf-8\"))[\"sources\"]\nTIMEOUT = 120\nUSER_AGENT = \"ai-energy-claim-provenance/0.1.0 (+https://ulissesflores.com/energia)\"\n# Some publishers serve an incomplete certificate chain; keep downloads working.\n_TLS = ssl.create_default_context()\n_TLS.check_hostname = False\n_TLS.verify_mode = ssl.CERT_NONE\nCACHE = SOURCES / \"parsed.pkl\"\n\n\ndef by_id(source_id: str) -> dict[str, Any]:\n    \"\"\"Return one registry entry.\n\n    Parameters\n    ----------\n    source_id : str\n        The ``id`` field of the wanted source.\n\n    Returns\n    -------\n    dict\n        The registry entry.\n\n    Raises\n    ------\n    KeyError\n        If no entry carries that id.\n    \"\"\"\n    for entry in REGISTRY:\n        if entry[\"id\"] == source_id:\n            return entry\n    raise KeyError(source_id)\n\n\ndef download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n    \"\"\"Fetch one source into ``sources/`` and digest it.\n\n    Parameters\n    ----------\n    entry : dict\n        Registry entry carrying ``id`` and ``url``.\n    suffix : str\n        File suffix to store it under, for example ``\".pdf\"``.\n\n    Returns\n    -------\n    tuple\n        Path of the stored file and its SHA-256 hex digest.\n    \"\"\"\n    SOURCES.mkdir(exist_ok=True)\n    request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n    with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n        payload = response.read()\n        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n    target.write_bytes(payload)\n    return target, hashlib.sha256(payload).hexdigest()\n\n\ndef pdf_text(path: Path) -> str:\n    \"\"\"Convert a PDF to layout-preserving text.\n\n    Parameters\n    ----------\n    path : pathlib.Path\n        PDF to convert.\n\n    Returns\n    -------\n    str\n        The extracted text.\n\n    Raises\n    ------\n    RuntimeError\n        If ``pdftotext`` is not on PATH, or if the file is not a PDF - a\n        publisher that moved a report typically answers with an HTML page and\n        HTTP 200, which would otherwise surface as an opaque converter crash.\n    \"\"\"\n    if shutil.which(\"pdftotext\") is None:\n        raise RuntimeError(\"pdftotext (Poppler) not found on PATH; PDF sources cannot be re-read\")\n    if not path.read_bytes().lstrip()[:5].startswith(b\"%PDF\"):\n        raise RuntimeError(f\"{path.name} is not a PDF; the publisher likely moved the document\")\n    done = subprocess.run(\n        f\"pdftotext -layout '{path}' -\", shell=True, capture_output=True, text=True, check=True\n    )\n    return done.stdout\n\n\ndef report(name: str, ok: bool, detail: str) -> bool:\n    \"\"\"Print one check line and pass its verdict through.\n\n    Parameters\n    ----------\n    name : str\n        Check name.\n    ok : bool\n        Whether the check passed.\n    detail : str\n        Short explanation printed after the verdict.\n\n    Returns\n    -------\n    bool\n        The ``ok`` argument, unchanged.\n    \"\"\"\n    print(f\"[{'OK  ' if ok else 'FAIL'}] {name}: {detail}\")\n    return ok\n\n\ndef digest_note(entry: dict[str, Any], digest: str) -> str:\n    \"\"\"Describe how a fresh digest compares with the recorded one.\n\n    Parameters\n    ----------\n    entry : dict\n        Registry entry.\n    digest : str\n        Freshly computed digest.\n\n    Returns\n    -------\n    str\n        Human-readable comparison.\n    \"\"\"\n    recorded = entry.get(\"sha256\")\n    if recorded is None:\n        return \"no recorded digest (live endpoint)\"\n    if recorded[:12] == digest[:12]:\n        return f\"digest matches {recorded[:12]}...\"\n    if entry.get(\"drift_expected\"):\n        return f\"digest drifted as expected ({recorded[:12]}... -> {digest[:12]}...)\"\n    return (\n        f\"digest DRIFTED ({recorded[:12]}... -> {digest[:12]}...); the publisher changed the file\"\n    )\n\n\ndef check_mlperf() -> bool:\n    \"\"\"Re-derive the MLPerf rows from the three live ledgers.\n\n    Returns\n    -------\n    bool\n        Whether the re-derived rows match the frozen evidence.\n    \"\"\"\n    frozen = json.loads((DATA / \"mlperf_submissions.json\").read_text(encoding=\"utf-8\"))\n    rebuilt: list[dict[str, Any]] = []\n    for round_name in (\"v5.0\", \"v5.1\", \"v6.0\"):\n        entry = by_id(f\"mlperf-{round_name}\")\n        path, digest = download(entry, \".json\")\n        print(f\"       mlperf {round_name}: {digest_note(entry, digest)}\")\n        rebuilt += parsers.parse_mlperf_ledger(path.read_bytes(), round_name)\n    key = lambda row: (row[\"round\"], row[\"id\"])  # noqa: E731\n    same = sorted(rebuilt, key=key) == sorted(frozen, key=key)\n    return report(\"mlperf_submissions.json\", same, f\"{len(rebuilt)} rows re-derived\")\n\n\ndef check_mlperf_systems() -> bool:\n    \"\"\"Re-list the NVIDIA system directories and check the ``_MaxQ`` pattern.\n\n    Returns\n    -------\n    bool\n        Whether the listings still match the frozen ones.\n    \"\"\"\n    frozen = json.loads((DATA / \"mlperf_nvidia_systems.json\").read_text(encoding=\"utf-8\"))\n    template = frozen[\"api_url_template\"]\n    ok = True\n    for round_name, names in frozen[\"systems\"].items():\n        request = urllib.request.Request(\n            template.format(round=round_name), headers={\"User-Agent\": USER_AGENT}\n        )\n        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:\n            live = sorted(item[\"name\"] for item in json.load(response))\n        ok &= report(f\"NVIDIA systems {round_name}\", live == names, f\"{len(live)} directories\")\n    return ok\n\n\ndef check_deng() -> bool:\n    \"\"\"Re-parse Table 5 of the paper and check the cited rows and ranks.\n\n    Returns\n    -------\n    bool\n        Whether every cited row and rank is reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"deng_languages.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"deng-language-energy-divide\")\n    path, digest = download(entry, \".pdf\")\n    print(f\"       deng: {digest_note(entry, digest)}\")\n    rows = parsers.parse_deng_table5(pdf_text(path))\n    if not report(\n        \"Deng Table 5 size\", len(rows) == frozen[\"n_languages\"], f\"{len(rows)} languages\"\n    ):\n        return False\n    ranks = {\n        row[\"code\"]: i for i, row in enumerate(sorted(rows, key=lambda r: r[\"total_energy_j\"]), 1)\n    }\n    parsed = {row[\"code\"]: row for row in rows}\n    ok = True\n    for cited in frozen[\"table_5_cited_rows\"]:\n        code = cited[\"code\"]\n        live = parsed[code]\n        matches = (\n            live[\"total_energy_j\"] == cited[\"total_energy_j\"]\n            and live[\"accuracy_pct\"] == cited[\"accuracy_pct\"]\n            and ranks[code] == cited[\"rank_by_total_energy\"]\n        )\n        ok &= report(f\"Deng {code}\", matches, f\"rank {ranks[code]} of {len(rows)}\")\n    return ok\n\n\ndef check_microsoft() -> bool:\n    \"\"\"Re-parse Table 15 of the Fact Sheet and compare it with the frozen rows.\n\n    Returns\n    -------\n    bool\n        Whether the 29 locations and their values are reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"microsoft_fy25.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"microsoft-fact-sheet\")\n    path, digest = download(entry, \".pdf\")\n    print(f\"       microsoft: {digest_note(entry, digest)}\")\n    if CACHE.exists():\n        rows = pickle.loads(CACHE.read_bytes())\n    else:\n        rows = parsers.parse_microsoft_table15(pdf_text(path))\n        CACHE.write_bytes(pickle.dumps(rows))\n    live = {row[\"location\"]: row[\"electricity_mwh\"] for row in rows}\n    want = {row[\"location\"]: row[\"electricity_mwh\"] for row in frozen[\"table_15_locations\"]}\n    return report(\"Microsoft Table 15\", live == want, f\"{len(live)} locations re-derived\")\n\n\ndef check_pjm() -> bool:\n    \"\"\"Re-extract the clearing prices from the four BRA reports.\n\n    Returns\n    -------\n    bool\n        Whether all five published prices are reproduced.\n    \"\"\"\n    frozen = json.loads((DATA / \"pjm_auctions.json\").read_text(encoding=\"utf-8\"))[\"auctions\"]\n    want = {row[\"delivery_year\"]: row[\"price_usd_mw_day\"] for row in frozen}\n    live: dict[str, float] = {}\n    for entry in (e for e in REGISTRY if e[\"id\"].startswith(\"pjm-bra-\")):\n        path, digest = download(entry, \".pdf\")\n        print(f\"       {entry['id']}: {digest_note(entry, digest)}\")\n        for year, price in parsers.parse_pjm_prices(pdf_text(path)).items():\n            if year in live and live[year] != price:\n                return report(\"PJM prices\", False, f\"{year} disagrees across reports\")\n            live[year] = price\n    missing = {year: price for year, price in want.items() if live.get(year) != price}\n    return report(\"PJM prices\", not missing, f\"{len(want)} prices re-derived from 4 reports\")\n\n\ndef check_eia() -> bool:\n    \"\"\"Re-fetch the EIA series and check that every frozen month survives.\n\n    Returns\n    -------\n    bool\n        Whether the live series still contains every frozen month, unchanged.\n    \"\"\"\n    frozen = json.loads((DATA / \"eia_retail_price_residential_us.json\").read_text(encoding=\"utf-8\"))\n    entry = by_id(\"eia-residential-price\")\n    path, digest = download(entry, \".json\")\n    print(f\"       eia: {digest_note(entry, digest)}\")\n    live = {\n        row[\"period\"]: row[\"price\"]\n        for row in json.loads(path.read_text(encoding=\"utf-8\"))[\"response\"][\"data\"]\n    }\n    was = {row[\"period\"]: row[\"price\"] for row in frozen[\"response\"][\"data\"]}\n    revised = {k: (v, live.get(k)) for k, v in was.items() if live.get(k) != v}\n    return report(\n        \"EIA monthly series\",\n        not revised,\n        f\"{len(was)} frozen months still present in {len(live)} live months\",\n    )\n\n\nCHECKS = (\n    (\"MLPerf ledgers\", check_mlperf),\n    (\"MLPerf NVIDIA systems\", check_mlperf_systems),\n    (\"Deng Table 5\", check_deng),\n    (\"Microsoft Table 15\", check_microsoft),\n    (\"PJM auctions\", check_pjm),\n    (\"EIA prices\", check_eia),\n)\n\n\ndef main() -> int:\n    \"\"\"Run every Track 2 check and report the verdict.\n\n    Returns\n    -------\n    int\n        ``0`` if every check passed, ``1`` otherwise.\n    \"\"\"\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\n        \"--keep\",\n        action=\"store_true\",\n        help=\"leave the downloaded sources in sources/ instead of deleting them\",\n    )\n    args = parser.parse_args()\n\n    failures = []\n    try:\n        for name, check in CHECKS:\n            print(f\"--- {name}\")\n            if not check():\n                failures.append(name)\n    finally:\n        if not args.keep and SOURCES.exists():\n            shutil.rmtree(SOURCES)\n\n    if failures:\n        print(f\"\\nTrack 2 FAILED for: {', '.join(failures)}\")\n        return 1\n    print(\"\\nTrack 2 complete: every frozen figure re-derived from its primary source.\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+     "numLines": 360,
+     "startLine": 1,
+     "totalLines": 360
+    }
+   },
+   "tool_result_meta": [
+    {
+     "id": "toolu_01JyGUMiWercrZNWDqHae7md",
+     "permission_decision": {
+      "decision": "accept",
+      "source": "config",
+      "reason_type": "mode"
+     }
+    }
+   ]
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 50,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "c55bdfcb-f2a8-4d32-a0d2-33a3c12eea30"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 100,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "6c8034fd-4c06-4432-85c1-d85586d3dbb8"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 200,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "5211d96f-fcb3-401f-994d-0ee230bfc774"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 250,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "720fca2b-7414-4e34-b5c8-7f638b6ad101"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 300,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "993cbc0a-ee81-4089-9344-e230e35f717d"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 400,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "981207c4-3ed7-47dd-8a3f-f3348cf3a0cf"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 500,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "f64c5f45-97b8-40ae-bcaf-22e7da0c8281"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 550,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "3e7be397-1808-4609-a6c1-b40c0073ae75"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 650,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "f788af3e-e1be-4a52-ba41-d6f4f9af8245"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 750,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "ef5d7cd6-16e1-492b-8348-acf57371e402"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 900,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "01f748e1-b018-4a42-9a3f-f130369ca8f8"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1000,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "a6475067-9d0c-4cd0-a8e5-998b40d1e1c0"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1100,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "390d509d-eda7-4cd2-ab03-1430c9997efa"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1250,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "533966d1-a873-4962-af06-b9ef7cbd8fa5"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1350,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "9a9f31b3-485c-4cf2-85e9-3457087c039b"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1400,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "d6c16efc-8e44-4d8c-855a-3395396225f4"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1500,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "cd0c40de-89f3-4aec-a9e5-15869f7406d1"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1550,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "4713aa74-7474-4e9f-a7cc-9da6cf9d0d6b"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1650,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "1dd71be5-4e54-4e62-a6c4-e5b0a342c15f"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1750,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "827b4751-6bb3-4a2e-9b67-e8b967596189"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 1850,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "93b66a39-f26b-4660-8659-5adafd84298c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2000,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "4524b29a-5f00-4145-b52d-ac264cf5398e"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2050,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "db9903f5-3d00-496c-a851-6c6e1e06f5ec"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2200,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "fa095a66-7e37-4ed0-9ba5-df4bcc6b5d2f"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2300,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "972d2735-2f07-461c-9218-86e43dda75b4"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2400,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "d32e557e-4e4b-49b3-b288-5630ffc789fc"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2500,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "00e8944f-ab71-40ea-822d-75e85150d14b"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2600,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "a1b8dad3-67e8-4f57-8481-6d487c34cec5"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2750,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "91852e03-7b00-4177-8789-1728681fa33b"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 2900,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "2534c063-09ba-4711-9e2d-2726f3182083"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3000,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "295e2649-99fa-4cc0-9b89-4d42d2f448a6"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3150,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "151430ca-c0e5-4f59-8b9b-6ea277b1877e"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3250,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "305d74ec-ef55-4709-92d5-3966ed6d36df"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3350,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "9901eee2-8c73-4493-b9d4-a5623ef6bc30"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3500,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "9b7bc945-d9ed-4ac2-95e7-e3aa8f4c0865"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3550,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "30772258-6523-4b6d-82a0-fc5845410350"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3650,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "aa452187-d88d-4e29-86ea-3293e00dc46d"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3750,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "5e37d420-6c7b-4f1a-af63-18e045d41fbd"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3850,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "fe5e986a-ed15-4cc8-aab4-3a6e6b24c952"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 3900,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "5c5a36bd-cd39-4540-9fd1-35f2ca06a842"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4000,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "39093edd-0890-4fb6-9236-94fedd7d4d21"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4050,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "c955bff3-c82e-41de-a6e3-9a81f2f13dd7"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4150,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "c0ce4240-adb3-4bb2-a5e8-e6fb684eabe0"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4300,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "c28c7ae9-648a-4b26-8c76-d2e2fe565032"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4450,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "5b0596e9-f423-49cc-83ac-7671e0d9b4bf"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4550,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "950f113d-4cbb-4722-9081-724aaf26d06e"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4700,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "f5604afd-5421-47cd-964d-9c9fa4a778b3"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 4850,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "d300e629-c19f-446d-98c9-ee5569ff5eea"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5000,
+   "estimated_tokens_delta": 150,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "746ed047-cfd0-45aa-9fa1-490c3ffe55fe"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5050,
+   "estimated_tokens_delta": 50,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "a8ef2d12-243f-402c-9efd-5f1c129cba84"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5150,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "6d3fee6f-d3a8-4b0e-bd03-944085eee88c"
+  },
+  {
+   "type": "system",
+   "subtype": "thinking_tokens",
+   "estimated_tokens": 5250,
+   "estimated_tokens_delta": 100,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "7f77868e-af6a-499b-bb3a-b70fcf7b4f62"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-mythos-5-1",
+    "id": "msg_011Cftu6u28KEbJzwchjfpYV",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "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"
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 5647,
+     "cache_read_input_tokens": 7249,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 5647
+     },
+     "output_tokens": 7,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "6477962a-d248-48b4-99cf-a9f50716b8c2",
+   "timestamp": "2026-10-10T16:50:10.184Z",
+   "request_id": "req_011Cftu6tmVqSuYM9aWtci3L",
+   "thinking_duration_ms": 71446,
+   "thinking_display": "updates"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "model": "claude-mythos-5-1",
+    "id": "msg_011Cftu6u28KEbJzwchjfpYV",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "O bug está em `fetch_sources.py:87-88`: o nome do arquivo vem de `Content-Disposition`, que o servidor controla. Um header como `filename=\"../../.zshrc\"` ou `filename=\"/etc/cron.d/x\"` faz `SOURCES / name` sair de `sources/`. Nesta sessão só tenho ferramentas de leitura, então o diff abaixo não foi aplicado. Ele é aplicável com `git apply`.\n\n```diff\n--- a/fetch_sources.py\n+++ b/fetch_sources.py\n@@ -15,6 +15,7 @@ import argparse\n import hashlib\n import json\n import pickle\n+import re\n import shutil\n import ssl\n import subprocess\n@@ -39,6 +40,8 @@ _TLS = ssl.create_default_context()\n _TLS.check_hostname = False\n _TLS.verify_mode = ssl.CERT_NONE\n CACHE = SOURCES / \"parsed.pkl\"\n+# Anything outside this set is replaced when a server-supplied file name is used.\n+_UNSAFE_NAME_CHARS = re.compile(r\"[^A-Za-z0-9._-]+\")\n \n \n def by_id(source_id: str) -> dict[str, Any]:\n@@ -65,26 +68,58 @@ def by_id(source_id: str) -> dict[str, Any]:\n     raise KeyError(source_id)\n \n \n+def safe_name(candidate: str, fallback: str) -> str:\n+    \"\"\"Reduce an untrusted file name to one plain path component.\n+\n+    Parameters\n+    ----------\n+    candidate : str\n+        Name taken from the server (``Content-Disposition``) or from the URL.\n+    fallback : str\n+        Name to use when nothing usable survives sanitisation.\n+\n+    Returns\n+    -------\n+    str\n+        A name made only of ``[A-Za-z0-9._-]`` that cannot leave a directory.\n+    \"\"\"\n+    leaf = re.split(r\"[\\\\/]\", candidate)[-1]\n+    leaf = _UNSAFE_NAME_CHARS.sub(\"_\", leaf).strip(\"._\")\n+    if not leaf or leaf == CACHE.name:\n+        return fallback\n+    return leaf\n+\n+\n def download(entry: dict[str, Any], suffix: str) -> tuple[Path, str]:\n     \"\"\"Fetch one source into ``sources/`` and digest it.\n \n     Parameters\n     ----------\n     entry : dict\n         Registry entry carrying ``id`` and ``url``.\n     suffix : str\n         File suffix to store it under, for example ``\".pdf\"``.\n \n     Returns\n     -------\n     tuple\n         Path of the stored file and its SHA-256 hex digest.\n+\n+    Raises\n+    ------\n+    ValueError\n+        If the stored path would resolve outside ``sources/``.\n     \"\"\"\n     SOURCES.mkdir(exist_ok=True)\n     request = urllib.request.Request(entry[\"url\"], headers={\"User-Agent\": USER_AGENT})\n     with urllib.request.urlopen(request, timeout=TIMEOUT, context=_TLS) as response:\n         payload = response.read()\n-        name = response.headers.get_filename() or Path(urllib.parse.urlparse(entry[\"url\"]).path).name\n-    target = SOURCES / (name or f\"{entry['id']}{suffix}\")\n+        served = response.headers.get_filename() or \"\"\n+    fallback = f\"{entry['id']}{suffix}\"\n+    name = safe_name(served or Path(urllib.parse.urlparse(entry[\"url\"]).path).name, fallback)\n+    root = SOURCES.resolve()\n+    target = (root / name).resolve()\n+    if target.parent != root:\n+        raise ValueError(f\"{entry['id']}: refusing to write outside sources/: {name!r}\")\n     target.write_bytes(payload)\n     return target, hashlib.sha256(payload).hexdigest()\n```\n\n**O que a correção faz, em camadas:**\n\n- **Sanitização do nome.** Só o último componente do caminho sobrevive, separadores `/` e `\\` são descartados, e qualquer caractere fora de `[A-Za-z0-9._-]` vira `_`. Nomes vazios, só de pontos, ou `..` caem no fallback `<id><sufixo>`, que vem do registro versionado.\n- **Verificação de contenção.** Depois de `resolve()`, o pai do destino precisa ser exatamente `sources/`. Isso cobre o caso de um symlink pré-existente dentro de `sources/` apontando para fora, que `write_bytes` seguiria.\n- **Proteção do cache.** Um servidor que respondesse `filename=\"parsed.pkl\"` faria `check_microsoft` desserializar bytes do atacante com `pickle.loads`, o que é execução de código. Isso vai um passo além do pedido estrito, mas é o mesmo vetor, então incluí a linha que redireciona esse nome ao fallback.\n\n**Efeito colateral útil:** `pdf_text` monta o comando com `shell=True` e aspas simples em volta do path. Um nome com `'` quebraria a citação. Com o nome restrito ao conjunto seguro, essa injeção fica fechada também, embora o ideal continue sendo trocar por lista de argumentos sem shell.\n\n**Fica de fora:** colisões de nome entre fontes diferentes continuam sobrescrevendo em silêncio dentro de `sources/`, e `_TLS` ainda desativa a verificação de certificado. Nenhum dos dois permite escrita fora do diretório, então não mexi."
+     }
+    ],
+    "container": null,
+    "stop_reason": null,
+    "stop_sequence": null,
+    "stop_details": null,
+    "usage": {
+     "input_tokens": 32,
+     "cache_creation_input_tokens": 5647,
+     "cache_read_input_tokens": 7249,
+     "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 5647
+     },
+     "output_tokens": 7,
+     "service_tier": "standard",
+     "inference_geo": "global"
+    },
+    "input_transformations": [],
+    "diagnostics": null,
+    "context_management": null
+   },
+   "parent_tool_use_id": null,
+   "session_id": "91937b28-e823-4f9f-bb66-20890f2040f0",
+   "uuid": "784eed23-f439-4ab3-a8ca-a5f4c26f1f13",
+   "timestamp": "2026-10-10T16:50:22.400Z",
+   "request_id": "req_011Cftu6tmVqSuYM9aWtci3L"
+  }
+ ],
+ "_meta": {
+  "modelo_pedido": "claude-mythos-5-1",
+  "prompt": "t1b-correcao.txt",
+  "segundos": 89.0,
+  "returncode": 0
+ }
+}

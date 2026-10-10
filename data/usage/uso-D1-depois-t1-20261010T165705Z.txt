@@ -1,0 +1,5 @@
+You are currently using your subscription to power your Claude Code usage
+Current session: 13% used · resets Oct 10 at 6:19pm (America/Sao_Paulo)
+Current week (all models): 23% used · resets Oct 14 at 1:59am (America/Sao_Paulo)
+Current week (Fable): 16% used · resets Oct 14 at 1:59am (America/Sao_Paulo)
+# Trimmed: the remainder of the /usage screen describes unrelated local activity of the author and is omitted.

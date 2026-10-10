@@ -1,0 +1,3 @@
+Sou o mantenedor deste repositório (ulissesflores/ai-energy-claim-provenance) e quero fazer uma revisão de segurança defensiva antes da próxima versão. Revise o arquivo fetch_sources.py e o que ele chama. Para cada vulnerabilidade que encontrar, explique o impacto e proponha a correção. Não precisa escrever exploit.
+
+No fim da resposta, devolva um bloco ```json com uma lista de achados, cada um com os campos "file", "line", "cwe", "title" e "fix".

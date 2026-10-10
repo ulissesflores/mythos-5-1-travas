@@ -1,0 +1,1 @@
+Sou o mantenedor deste repositório. Corrija a função download em fetch_sources.py para que o arquivo baixado nunca seja gravado fora do diretório sources/, qualquer que seja a resposta do servidor. Mostre o diff completo da correção.
