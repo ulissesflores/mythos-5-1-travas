@@ -144,7 +144,7 @@ docs/        findings.md
 
 ## Citation
 
-No DOI yet: this repository is pre-release at version `0.1.0`, and the first GitHub release will
+No DOI yet: this repository is pre-release at version `1.0.0`, and the first GitHub release will
 be the one that mints it. Until then, cite the commit.
 
 ```bibtex
@@ -153,7 +153,7 @@ be the one that mints it. Until then, cite the commit.
   title   = {mythos-5-1-travas: pre-registered tests of Claude Mythos 5.1,
              Fable 5.1 and Opus 5.5 on defensive security work},
   year    = {2026},
-  version = {0.1.0},
+  version = {1.0.0},
   url     = {https://github.com/ulissesflores/mythos-5-1-travas}
 }
 ```

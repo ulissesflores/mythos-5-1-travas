@@ -3,7 +3,7 @@
   "@type": "SoftwareSourceCode",
   "name": "mythos-5-1-travas",
   "description": "Companion repository for 'Entrei no Mythos 5.1 e testei em casa': pre-registered tests of Claude Mythos 5.1, Fable 5.1 and Opus 5.5 on defensive security work, locked by tests and sealed by a SHA-256 chain.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "dateCreated": "2026-10-10",
   "datePublished": "2026-10-10",
   "license": "https://spdx.org/licenses/Apache-2.0",

@@ -1,9 +1,8 @@
 {
   "title": "mythos-5-1-travas: pre-registered tests of Claude Mythos 5.1, Fable 5.1 and Opus 5.5 on defensive security work",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "upload_type": "software",
-  "access_right": "closed",
-  "notes": "No DOI without the operator's explicit authorization. This deposit stays closed until the release flow is deliberately triggered.",
+  "access_right": "open",
   "license": "Apache-2.0",
   "creators": [
     {
@@ -11,7 +10,15 @@
       "orcid": "0000-0002-6034-7765"
     }
   ],
-  "keywords": ["large language models", "AI safety", "safeguards", "cybersecurity", "Claude", "pre-registration", "reproducibility"],
+  "keywords": [
+    "large language models",
+    "AI safety",
+    "safeguards",
+    "cybersecurity",
+    "Claude",
+    "pre-registration",
+    "reproducibility"
+  ],
   "related_identifiers": [
     {
       "identifier": "https://ulissesflores.com/artigos/acesso-mythos-5-1",

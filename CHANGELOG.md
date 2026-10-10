@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [SemVer](https://semver.org/).
 
+## [1.0.0] - 2026-10-10
+
+### Changed
+- First citable version: metadata bumped to 1.0.0 and the Zenodo deposit opened, immediately before the release that mints the DOI.
+
 ## [0.1.0] - 2026-10-10
 
 ### Added

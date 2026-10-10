@@ -15,7 +15,7 @@ abstract: >-
   assertion and a single SHA-256 chain seals code, frozen run records and
   derived results.
 type: software
-version: "0.1.0"
+version: "1.0.0"
 date-released: "2026-10-10"
 license: Apache-2.0
 repository-code: "https://github.com/ulissesflores/mythos-5-1-travas"
