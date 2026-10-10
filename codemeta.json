@@ -4,6 +4,7 @@
   "name": "mythos-5-1-travas",
   "description": "Companion repository for 'Entrei no Mythos 5.1 e testei em casa': pre-registered tests of Claude Mythos 5.1, Fable 5.1 and Opus 5.5 on defensive security work, locked by tests and sealed by a SHA-256 chain.",
   "version": "1.0.0",
+  "identifier": "https://doi.org/10.5281/zenodo.23287128",
   "dateCreated": "2026-10-10",
   "datePublished": "2026-10-10",
   "license": "https://spdx.org/licenses/Apache-2.0",
@@ -12,7 +13,15 @@
   "programmingLanguage": "Python",
   "runtimePlatform": "Python 3.11+",
   "developmentStatus": "active",
-  "keywords": ["large language models", "AI safety", "safeguards", "cybersecurity", "Claude", "pre-registration", "reproducibility"],
+  "keywords": [
+    "large language models",
+    "AI safety",
+    "safeguards",
+    "cybersecurity",
+    "Claude",
+    "pre-registration",
+    "reproducibility"
+  ],
   "author": [
     {
       "@type": "Person",

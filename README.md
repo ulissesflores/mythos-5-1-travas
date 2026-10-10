@@ -4,6 +4,7 @@
 
 **Anthropic says Claude Mythos 5.1 and Claude Fable 5.1 are the same model with different safeguards. On the same defensive prompts, run on my own code, Fable 5.1 was stopped in 4 of 12 runs and Mythos 5.1 in none. On finding planted bugs, Mythos, Fable and Opus 5.5 tied.**
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23287128.svg)](https://doi.org/10.5281/zenodo.23287128)
 [![License: Apache-2.0](https://img.shields.io/badge/code-Apache--2.0-blue.svg)](LICENSES/Apache-2.0.txt)
 [![License: CC BY 4.0](https://img.shields.io/badge/prose-CC--BY--4.0-lightgrey.svg)](LICENSES/CC-BY-4.0.txt)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
@@ -144,8 +145,8 @@ docs/        findings.md
 
 ## Citation
 
-No DOI yet: this repository is pre-release at version `1.0.0`, and the first GitHub release will
-be the one that mints it. Until then, cite the commit.
+Archived on Zenodo. **Concept DOI** (all versions): [10.5281/zenodo.23287128](https://doi.org/10.5281/zenodo.23287128).
+**Version DOI** (1.0.0): [10.5281/zenodo.23287129](https://doi.org/10.5281/zenodo.23287129).
 
 ```bibtex
 @software{flores_mythos_5_1_travas_2026,
@@ -154,12 +155,13 @@ be the one that mints it. Until then, cite the commit.
              Fable 5.1 and Opus 5.5 on defensive security work},
   year    = {2026},
   version = {1.0.0},
+  doi     = {10.5281/zenodo.23287128},
   url     = {https://github.com/ulissesflores/mythos-5-1-travas}
 }
 ```
 
-Once the DOI exists, prefer the **concept DOI** to cite the project as a whole - it always
-resolves to the latest version - and the **version DOI** to cite the exact state you ran.
+Prefer the **concept DOI** to cite the project as a whole - it always resolves to the latest
+version - and the **version DOI** to cite the exact state you ran.
 Machine-readable metadata lives in [`CITATION.cff`](CITATION.cff), [`codemeta.json`](codemeta.json)
 and [`.zenodo.json`](.zenodo.json).
 

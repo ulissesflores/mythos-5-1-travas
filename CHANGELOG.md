@@ -6,6 +6,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Changed
 - First citable version: metadata bumped to 1.0.0 and the Zenodo deposit opened, immediately before the release that mints the DOI.
+- DOI minted by the `v1.0.0-rc1` release: concept DOI [10.5281/zenodo.23287128](https://doi.org/10.5281/zenodo.23287128), version DOI [10.5281/zenodo.23287129](https://doi.org/10.5281/zenodo.23287129); embedded in README, CITATION.cff and codemeta.json.
 
 ## [0.1.0] - 2026-10-10
 
